@@ -13,15 +13,8 @@
   flake-utils.lib.eachDefaultSystem (system:
   let pkgs = import nixpkgs {
     inherit system;
-    config.permittedInsecurePackages = [ "python-2.7.18.7" "nodejs-10.24.0"];
+    config.permittedInsecurePackages = [ "python-2.7.18.7" ];
   };
-      buildNodejs = pkgs.callPackage "${nixpkgs}/pkgs/development/web/nodejs/nodejs.nix" {};
-      nodejs_10 = buildNodejs {
-        enableNpm = true;
-        version = "10.24.0";
-        sha256 = "1k1srdis23782hnd1ymgczs78x9gqhv77v0am7yb54gqcspp70hm";
-      };
-      screeps = pkgs.callPackage ./client.nix {inherit nodejs_10;};
   in {
     devShells.default = pkgs.mkShell {
       nativeBuildInputs = with pkgs; [
@@ -31,8 +24,6 @@
         openssl
         openssl.dev
         nodejs_20
-        screeps
-        python2
         rustup
       ];
       src = [

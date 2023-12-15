@@ -42,6 +42,7 @@ pub fn game_loop() {
         // show all output of Info level, adjust as needed
         logging::setup_logging(logging::Info);
     });
+    println!("test");
 
     debug!("loop starting! CPU: {}", game::cpu::get_used());
 

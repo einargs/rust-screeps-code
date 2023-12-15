@@ -2,7 +2,7 @@
 let wasm_module;
 
 // replace this with the name of your module
-const MODULE_NAME = "screeps-starter-rust";
+const MODULE_NAME = "screeps-code";
 
 // This provides the function `console.error` that wasm_bindgen sometimes expects to exist,
 // especially with type checks in debug mode. An alternative is to have this be `function () {}`

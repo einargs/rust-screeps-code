@@ -1,5 +1,6 @@
 "use strict";
 let wasm_module;
+// new comment
 
 // replace this with the name of your module
 const MODULE_NAME = "screeps-code";

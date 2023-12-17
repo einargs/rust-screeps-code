@@ -185,6 +185,7 @@ name = "screeps-code"
 version = "0.0.0"
 dependencies = [
  "base64",
+ "enum_dispatch",
  "fern",
  "js-sys",
  "log",

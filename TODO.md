@@ -59,3 +59,7 @@ still very easy to drag and drop back in place.
 
 # Rust
 - I bet I can create a custom serialization/deserialization for room names.
+- add an entries iterator to JsHashMap
+
+# Plan
+- Need to fix a bug where the BTreeMap for the creeps isn't serializing properly.

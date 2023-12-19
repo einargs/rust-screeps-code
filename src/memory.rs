@@ -27,7 +27,7 @@ use log::*;
 use crate::role::{Role, RoleTag, Harvester, Builder, CreepMemory};
 use crate::storage::cbor;
 
-#[derive(Debug, Encode, Decode)]
+#[derive(PartialEq, Debug, Encode, Decode)]
 pub struct SpawnMemory {
   #[n(0)] next_role: RoleTag,
 }
@@ -35,7 +35,7 @@ pub struct SpawnMemory {
 impl Default for SpawnMemory {
   fn default() -> SpawnMemory {
     SpawnMemory {
-      next_role: RoleTag::Builder
+      next_role: RoleTag::Harvester
     }
   }
 }
@@ -48,7 +48,7 @@ impl SpawnMemory {
   }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(PartialEq, Debug, Encode, Decode)]
 pub struct Memory {
   #[n(0)] pub creep_counter: u32,
   #[n(1)] pub creeps: BTreeMap<String, CreepMemory>,
@@ -122,7 +122,7 @@ fn from_buffer(buffer: &[u8]) -> Result<Memory, MemError> {
   Ok(minicbor::decode(buffer)?)
 }
 
-fn to_buffer(memory: Memory, buffer: &mut Vec<u8>) -> Result<(), MemError> {
+fn to_buffer(memory: &Memory, buffer: &mut Vec<u8>) -> Result<(), MemError> {
   let mut encoder = Encoder::new(buffer);
   encoder.encode(memory)?;
   Ok(())
@@ -150,9 +150,22 @@ thread_local! {
   static MEMORY_DECODE_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
 }
 
+/// Quick utility thing for when I want to log a buffer as a hex string.
+struct HexSlice<'a>(&'a [u8]);
+
+use std::fmt::{Formatter, UpperHex};
+impl<'a> UpperHex for HexSlice<'a> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    for byte in self.0 {
+      UpperHex::fmt(byte, f)?;
+    }
+    Ok(())
+  }
+}
+
 pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
   let index: u8 = 1;
-  //raw_memory::set_active_segments(&[0]);
+  raw_memory::set_active_segments(&[1]);
 
   MEMORY_DECODE_BUFFER.with(|buf_refcell| {
     let active_segments = raw_memory::segments();
@@ -161,11 +174,16 @@ pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
       let mut buffer = buf_refcell.borrow_mut();
       buffer.clear();
       let mut memory = match load_mem(mem_str, buffer.deref_mut()) {
-        Err(_) => Memory::default(),
+        Err(err) => {
+          warn!("generating default memory because of error: {err:?}");
+          Memory::default()
+        },
         Ok(mem) => mem
       };
       fun(&mut memory);
-      to_buffer(memory, buffer.deref_mut()).expect("encoding problem");
+      info!("memory state: {:?}", &memory);
+      buffer.clear();
+      to_buffer(&memory, buffer.deref_mut()).expect("encoding problem");
       let new_mem_str = to_mem_string(buffer.deref());
       // TODO: at end clear the normal memory. Also maybe switch to using raw memory segments?
       active_segments.set(index, new_mem_str);
@@ -180,41 +198,47 @@ pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
 #[cfg(test)]
 mod tests {
   use super::*;
-  /*
-  #[derive(Debug, Encode, Decode)]
-  struct Test {
-    #[n(0)] a: u8,
-    #[n(1)] b: BTreeMap<u32, u32>
-  }
+  use screeps::objects::{Source};
+  // in hex: 6497E5D8E58BD3C61B071B9000000018
+  const OBJECT_ID_RAW: u128 = 133711498260253793587658037051825061912;
+  const SPAWN_ID_RAW: u128 = 251504297449469618279889252367202254872;
+
+  #[derive(PartialEq, Eq, Debug, Decode, Encode)]
+  struct Holder(#[n(0)] #[cbor(with="cbor::object_id")] ObjectId<Source>);
 
   #[test]
-  fn can_encode() {
-    let mut map = BTreeMap::<u32, u32>::new();
-    map.insert(1, 1);
-    let test = Test { a: 1, b: map };
-    let mut other = Vec::<u8>::new();
-    //let other_ref: &mut [u8] = other.as_mut_slice();
-    let mut encoder = minicbor::Encoder::new(&mut other);
-    let res = encoder.encode(test).expect("encode error");
-    println!("result {:?}", res);
-    let other2 = encoder.into_writer();
-    //minicbor::encode(test, other_ref);
-    println!("other at end: {:?}", &other2);
-    let t2: Test = minicbor::decode(other.as_slice()).expect("test decode");
-    println!("final test {:?}", t2);
-  }*/
+  fn serialize_deserialize_object_id() {
+    use cbor::object_id;
+    let mut buffer = Vec::new();
+    let h1: Holder = Holder(ObjectId::from_packed(OBJECT_ID_RAW));
+    let mut encoder = minicbor::Encoder::new(&mut buffer);
+    encoder.encode(&h1).expect("encode error");
+    let buffer2 = encoder.into_writer();
+    let mem_string = to_mem_string(buffer2);
+    let mut decode_buffer: Vec<u8> = Vec::new();
+    from_mem_string(mem_string, &mut decode_buffer).expect("decoded");
+    let h2: Holder = minicbor::decode(decode_buffer.as_slice()).expect("test decode");
+    assert_eq!(h1, h2);
+  }
   #[test]
-  fn serialize_deserialize() {
+  fn serialize_deserialize_memory() {
     use crate::role::*;
     let mut buffer = Vec::new();
     let mut mem = Memory::default();
-    mem.creeps.insert("test".to_string(), CreepMemory::Harvester (Harvester {
-      target: HarvesterTarget::Upgrade(ObjectId::from_packed(0))
+    mem.creeps.insert("Builder-0".to_string(), CreepMemory::Builder (Builder {
+      target: BuilderTarget::Harvest(TargetResource::TravelingTo(ObjectId::from_packed(OBJECT_ID_RAW)))
     }));
-    to_buffer(mem, &mut buffer);
+    let spawn_id = ObjectId::<StructureSpawn>::from_packed(SPAWN_ID_RAW);
+    mem.spawns.insert(spawn_id, SpawnMemory {
+      next_role: RoleTag::Harvester,
+    });
+    /*mem.creeps.insert("Harvester-1".to_string(), CreepMemory::Harvester (Harvester {
+      target: HarvesterTarget::Harvest(ObjectId::from_packed(OBJECT_ID_RAW))
+    }));*/
+    to_buffer(&mem, &mut buffer).expect("buffer conversion error");
     let mem_str = to_mem_string(&buffer);
     buffer.clear();
     let mut memory = load_mem(mem_str, &mut buffer).expect("memory");
-    assert_eq!(memory.creeps.len(), 1);
+    assert_eq!(memory, mem);
   }
 }

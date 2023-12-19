@@ -2,6 +2,13 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
+mod body;
+mod util;
+mod storage;
+mod role;
+mod logging;
+mod memory;
+
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -17,12 +24,6 @@ use screeps::{find, game};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-mod util;
-mod storage;
-mod role;
-mod logging;
-mod memory;
-
 use crate::role::{Role, RoleTag, CreepMemory};
 use crate::memory::Memory;
 
@@ -32,12 +33,13 @@ static INIT_LOGGING: std::sync::Once = std::sync::Once::new();
 pub fn game_loop() {
   INIT_LOGGING.call_once(|| {
     // show all output of Info level, adjust as needed
-    logging::setup_logging(logging::Debug);
+    logging::setup_logging(logging::Info);
   });
   memory::with_memory(|mem| {
-    info!("count: {}", mem.creep_counter);
+    //info!("count: {}", mem.creep_counter);
     spawn_loop(mem);
     creep_loop(mem);
+    clean_up(mem);
 
   });
   info!("done! cpu: {}", game::cpu::get_used());
@@ -45,24 +47,26 @@ pub fn game_loop() {
 
 fn initial_creep_memory(room: &Room, tag: RoleTag) -> CreepMemory {
   use role::*;
-  let source = util::select_source(room);
   match tag {
     RoleTag::Harvester => CreepMemory::Harvester(Harvester {
-      target: HarvesterTarget::Harvest(source.id())
+      target: HarvesterTarget::Harvest(Default::default())
     }),
+    RoleTag::Upgrader => CreepMemory::Upgrader(
+      Upgrader::Harvest(Default::default()),
+    ),
     RoleTag::Builder => CreepMemory::Builder(Builder {
-      target: BuilderTarget::Harvest(source.id())
+      target: BuilderTarget::Harvest(TargetResource::default())
     }),
   }
 }
 
 fn creep_loop(memory: &mut Memory) {
-  info!("length {}", memory.creeps.len());
-  for (name, creep_mem) in &memory.creeps {
-    debug!("{}: {:?}", name, creep_mem);
-  }
   for creep in game::creeps().values() {
+    if creep.spawning() {
+      continue;
+    }
     let name = creep.name();
+    debug!("running creep {}", name);
     if let Some(mem) = memory.creep_mut(&name) {
       mem.run(creep);
     } else {
@@ -72,17 +76,26 @@ fn creep_loop(memory: &mut Memory) {
 }
 
 fn spawn_loop(memory: &mut Memory) {
+  use body::BodyDesign;
   for spawn in game::spawns().values() {
     debug!("running spawn {}", String::from(spawn.name()));
     let mem = memory.spawn_mut(spawn.id()).or_default();
-    let role = mem.get_role();
 
-    let body = [Part::Move, Part::Move, Part::Carry, Part::Work];
-    let body_cost = body.iter().map(|p| p.cost()).sum();
     let room = spawn.room().unwrap();
+    let spawn_energy = spawn.store().get(ResourceType::Energy).unwrap_or(0);
+    let spawn_capacity = spawn.store().get_capacity(Some(ResourceType::Energy));
+    let design = BodyDesign::new()
+      .r#move(2)
+      .carry(1)
+      .work(1);
+    let body_cost = design.max_cost(spawn_capacity);
 
-    if room.energy_available() >= body_cost {
+    if spawn_energy < body_cost {
+      info!("need {} more energy for cost {}", body_cost - spawn_energy, body_cost);
+    } else {
+      let role = mem.get_role();
       let name = memory.creep_name(role);
+      let body = design.scale(spawn_capacity);
       // create a unique name, spawn.
       match spawn.spawn_creep(&body, &name) {
         Err(e) => warn!("couldn't spawn: {:?}", e),
@@ -94,6 +107,40 @@ fn spawn_loop(memory: &mut Memory) {
           let tmp = name.clone();
           memory.initialize_creep(name, creep_mem);
           debug!("has {}", memory.creeps.contains_key(&tmp));
+        }
+      }
+    }
+  }
+}
+
+mod my_game {
+  use wasm_bindgen::prelude::*;
+  #[wasm_bindgen]
+  extern "C" {
+    pub type Game;
+
+    #[wasm_bindgen(static_method_of = Game, getter = creeps)]
+    pub fn creeps() -> JsValue;
+  }
+}
+
+fn clean_up(memory: &mut Memory) {
+  if game::time() % 1000 == 0 {
+    debug!("running memory cleanup");
+    let game_creeps = my_game::Game::creeps();
+    if let Ok(memory_creeps) = Reflect::get(&screeps::memory::ROOT, &JsString::from("creeps")) {
+      // convert from JsValue to Object
+      let memory_creeps: Object = memory_creeps.unchecked_into();
+      // iterate memory creeps
+      for creep_name_js in Object::keys(&memory_creeps).iter() {
+        // convert to String (after converting to JsString)
+        let creep_name = String::from(creep_name_js.dyn_ref::<JsString>().unwrap());
+
+        // check the HashSet for the creep name, deleting if not alive
+        if Reflect::has(&game_creeps, &creep_name_js).unwrap() {
+          info!("deleting memory for dead creep {}", creep_name);
+          let _ = Reflect::delete_property(&memory_creeps, &creep_name_js);
+          let _ = memory.creeps.remove(&creep_name);
         }
       }
     }

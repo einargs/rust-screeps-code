@@ -1,4 +1,5 @@
 - nuke warnings
+- Can I use roads to open up more room around sources?
 - power creeps
 - mineral mining vs deposit mining
 - highways have resources?
@@ -61,5 +62,14 @@ still very easy to drag and drop back in place.
 - I bet I can create a custom serialization/deserialization for room names.
 - add an entries iterator to JsHashMap
 
-# Plan
-- Need to fix a bug where the BTreeMap for the creeps isn't serializing properly.
+# Programming Future
+- Look into overriding `Memory._parsed` or whatever to avoid reparsing JSON
+  every time.
+- Tool for making an std::io::Writer or CBOR writer or whatever (minicbor has an interface
+  for std::io::writer IIRC) that writes directly to a buffer in the needed encoding format.
+- use that better encoding package someone mentioned in the rust channel.
+- Build a generic, re-usable tool for looking for work, and for idling until work is found.
+  I could wrap targets in it! Have it basically be a generic cache I can wrap around stuff,
+  so when it doesn't have data it looks for how to find the data, but once it does, it's good.
+  Can even bake in stuff like other people telling it to do something or only checking every X
+  amount of time.

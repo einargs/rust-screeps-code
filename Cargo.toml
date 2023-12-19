@@ -20,6 +20,7 @@ web-sys = { version = "0.3", features = ["console"] }
 base64 = "0.21.5"
 minicbor = { version = "0.20.0", features = ["derive", "alloc"] }
 enum_dispatch = "0.3.12"
+casey = "0.4.0"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

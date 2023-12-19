@@ -38,6 +38,10 @@ pub mod object_id_map {
       .ok_or(decode::Error::message("object id map did not have set length"))?;
     let mut map: HashMap<ObjectId<T>, M> = HashMap::with_capacity(size as usize);
     for _ in 0..size {
+      let len = d.array()?;
+      if len != Some(2) {
+        return Err(decode::Error::message("member pair for object_id_map was not an array of two members"));
+      }
       let id = object_id::decode(d, ctx)?;
       let mem = M::decode(d, ctx)?;
       map.insert(id, mem);

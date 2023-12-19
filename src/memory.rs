@@ -27,6 +27,8 @@ use log::*;
 use crate::role::{Role, RoleTag, Harvester, Builder, CreepMemory};
 use crate::storage::cbor;
 
+use persist_memory::Persist;
+
 #[derive(PartialEq, Debug, Encode, Decode)]
 pub struct SpawnMemory {
   #[n(0)] next_role: RoleTag,
@@ -199,12 +201,26 @@ pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
 mod tests {
   use super::*;
   use screeps::objects::{Source};
+  use persist_memory::Persist;
   // in hex: 6497E5D8E58BD3C61B071B9000000018
   const OBJECT_ID_RAW: u128 = 133711498260253793587658037051825061912;
   const SPAWN_ID_RAW: u128 = 251504297449469618279889252367202254872;
 
   #[derive(PartialEq, Eq, Debug, Decode, Encode)]
   struct Holder(#[n(0)] #[cbor(with="cbor::object_id")] ObjectId<Source>);
+
+  #[derive(Persist)]
+  struct Test {
+    a: u32,
+    #[persist(0)] b: u32,
+    c: u32,
+    #[persist(1, "cbor::object_id")] d: ObjectId<Creep>,
+  }
+
+  #[test]
+  fn can_use_persist() {
+    let t = <Test as Persist>::Persisted { b: 0, d: ObjectId::from_packed(OBJECT_ID_RAW) };
+  }
 
   #[test]
   fn serialize_deserialize_object_id() {

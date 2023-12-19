@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+// TODO: remove
+#![feature(more_qualified_paths)]
 
 mod body;
 mod util;

@@ -1,3 +1,6 @@
+[workspace]
+members = ["persist_memory_derive", "persist_memory"]
+
 [package]
 name = "screeps-code"
 version = "0.0.0"
@@ -8,6 +11,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+persist_memory = { path = "./persist_memory" }
 js-sys = "0.3"
 log = "0.4"
 fern = "0.6"

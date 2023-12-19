@@ -58,11 +58,21 @@ CBOR (minicbor).
 minicbor isn't generic like serde, but it doesn't matter in this situation and is
 still very easy to drag and drop back in place.
 
+
 # Rust
 - I bet I can create a custom serialization/deserialization for room names.
 - add an entries iterator to JsHashMap
+- cache the output so I don't have to deserialize every tick.
 
 # Programming Future
+- I need to finish the persist macro. But I'm going to work on something else
+  right now.
+- Tool to auto-deserialize ObjectIds inside my persistent memory.
+- I can write a procedural derive macro that uses helper attributes to
+  automatically split memory structures into stuff that's serialized and
+  deserialized, and stuff that's cached and uses a default(?) value or some
+  re-compute function. I'm thinking two attributes for that; `cache(default)`
+  and `cache(compute=fn_name)`.
 - Look into overriding `Memory._parsed` or whatever to avoid reparsing JSON
   every time.
 - Tool for making an std::io::Writer or CBOR writer or whatever (minicbor has an interface

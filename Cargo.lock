@@ -160,6 +160,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 
 [[package]]
+name = "persist_memory"
+version = "0.1.0"
+dependencies = [
+ "persist_memory_derive",
+]
+
+[[package]]
+name = "persist_memory_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.41",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.70"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,6 +216,7 @@ dependencies = [
  "js-sys",
  "log",
  "minicbor",
+ "persist_memory",
  "screeps-game-api",
  "wasm-bindgen",
  "wasm-bindgen-test",

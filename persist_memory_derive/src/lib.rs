@@ -48,47 +48,56 @@ fn get_attr_data(field: &Field) -> syn::Result<Option<PersistAttr>> {
   Ok(out)
 }
 
-fn make_persisted_fields(
+fn use_fields(
   fields: &Fields,
+  mut op: impl FnMut(&Field, Option<PersistAttr>) -> TokenStream,
 ) -> syn::Result<TokenStream> {
-  fn handle(punc: &Punctuated<Field, Token![,]>) -> syn::Result<TokenStream> {
+  fn handle(
+    punc: &Punctuated<Field, Token![,]>,
+    mut op: impl FnMut(&Field, Option<PersistAttr>) -> TokenStream,
+  ) -> syn::Result<TokenStream> {
     punc.iter()
-      .map(|field| -> Option<syn::Result<TokenStream>> {
+      .map(|field| -> syn::Result<TokenStream> {
         get_attr_data(field).map(|opt|
-          opt.map(|persist_attr| {
-            let ty = &field.ty;
-            let n = persist_attr.index;
-            let with = persist_attr.coder_path.map(|s| quote! {
-              #[cbor(with = #s)]
-            });
-            let attr = quote! {
-              #[n(#n)] #with
-            };
-            match &field.ident {
-              Some(ident) => quote! {
-                #attr #ident : #ty,
-              },
-              None => quote! {
-                #attr #ty,
-              },
-            }
-          })
-        ).transpose()
+          op(field, opt)
+        )
       })
-      .flatten()
       .collect::<syn::Result<TokenStream>>()
   }
   Ok(match fields {
     Fields::Named(data) => {
-      let new_fields = handle(&data.named)?;
+      let new_fields = handle(&data.named, op)?;
       quote! { { #new_fields } }
     },
     Fields::Unnamed(data) => {
-      let new_fields = handle(&data.unnamed)?;
+      let new_fields = handle(&data.unnamed, op)?;
       quote! { ( #new_fields ) }
     },
     Fields::Unit => TokenStream::new(),
   })
+}
+
+fn make_persisted_fields(
+  fields: &Fields,
+) -> syn::Result<TokenStream> {
+  use_fields(fields, |field, opt_attr| opt_attr.map(|persist_attr| {
+    let ty = &field.ty;
+    let n = persist_attr.index;
+    let with = persist_attr.coder_path.map(|s| quote! {
+      #[cbor(with = #s)]
+    });
+    let attr = quote! {
+      #[n(#n)] #with
+    };
+    match &field.ident {
+      Some(ident) => quote! {
+        #attr #ident : #ty,
+      },
+      None => quote! {
+        #attr #ty,
+      },
+    }
+  }).unwrap_or_default())
 }
 
 fn for_struct(
@@ -97,24 +106,36 @@ fn for_struct(
   inp: DataStruct,
 ) -> syn::Result<TokenStream> {
   // filter out fields that I'll be persisting.
-  let fields = make_persisted_fields(&inp.fields)?;
-  println!("fields {:?}", fields);
+  let field_decl = make_persisted_fields(&inp.fields)?;
+  let to_persist_fields = use_fields(&inp.fields, |field, opt_attr| {
+    let name = &field.ident;
+    opt_attr.map(|attr| quote! {
+      #name: self.#name,
+    }).unwrap_or_default()
+  })?;
+  let revive_fields = use_fields(&inp.fields, |field, opt_attr| {
+    let name = &field.ident;
+    opt_attr.map_or(quote!{
+      #name: Default::default(),
+    }, |attr| quote! {
+      #name: stored.#name,
+    })
+  })?;
+
   let output = quote! {
     #[derive(::minicbor::Encode, ::minicbor::Decode)]
-    pub struct #persisted_ident #fields
+    pub struct #persisted_ident #field_decl
     impl ::persist_memory::Persist for #name {
       type Persisted = #persisted_ident;
+      fn to_persist(&self) -> Self::Persisted {
+        #persisted_ident #to_persist_fields
+      }
+
+      fn revive(stored: Self::Persisted) -> Self {
+        #name #revive_fields
+      }
     }
   };
-      /*
-      fn to_persist(&self) -> Persisted {
-        #persisted_ident 
-      }
-
-      fn revive(stored: Persisted) -> Self {
-
-      }
-    */
   Ok(output)
 }
 

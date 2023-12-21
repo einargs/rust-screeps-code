@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-minicbor = { features = ["derive", "alloc"] }
+minicbor = { version = "0.20.0", features = ["derive", "alloc"] }
 persist_memory = { path = "../persist_memory" }

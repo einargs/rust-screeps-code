@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-persist_memory_derive = { path = "../persist_memory_derive" }
-minicbor = { features = ["derive", "alloc"] }
+persist_memory_derive = { version = "0.1", path = "../persist_memory_derive" }
+screeps-game-api = { version = "0.18", features = ["sim"] }
+minicbor = { version = "0.20.0", features = ["derive", "alloc"] }

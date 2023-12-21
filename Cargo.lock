@@ -165,6 +165,7 @@ version = "0.1.0"
 dependencies = [
  "minicbor",
  "persist_memory_derive",
+ "screeps-game-api",
 ]
 
 [[package]]
@@ -225,7 +226,6 @@ dependencies = [
  "js-sys",
  "log",
  "minicbor",
- "persist_memory",
  "screeps-game-api",
  "wasm-bindgen",
  "wasm-bindgen-test",

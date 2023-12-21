@@ -28,6 +28,17 @@ impl<T> Stored<T> for T::Persisted where T: Persist {
 }
 
 macro_rules! base_impl {
+  (<$($v:ident),*> => $t:ty) => {
+    impl <$($v),*> Persist for $t {
+      type Persisted = $t;
+      fn to_persist(&self) -> $t {
+        self.clone()
+      }
+      fn revive(stored: $t) -> $t {
+        stored
+      }
+    }
+  };
   ($t:ident) => {
     impl Persist for $t {
       type Persisted = $t;
@@ -38,7 +49,9 @@ macro_rules! base_impl {
         stored
       }
     }
-  }
+  };
 }
 
 base_impl!(u32);
+use screeps::local::ObjectId;
+base_impl!(<T> => ObjectId<T>);

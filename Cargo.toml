@@ -11,7 +11,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-persist_memory = { path = "./persist_memory" }
+# persist_memory = { path = "./persist_memory" }
 js-sys = "0.3"
 log = "0.4"
 fern = "0.6"

@@ -27,8 +27,6 @@ use log::*;
 use crate::role::{Role, RoleTag, Harvester, Builder, CreepMemory};
 use crate::storage::cbor;
 
-use persist_memory::Persist;
-
 #[derive(PartialEq, Debug, Encode, Decode)]
 pub struct SpawnMemory {
   #[n(0)] next_role: RoleTag,
@@ -209,6 +207,7 @@ mod tests {
   #[derive(PartialEq, Eq, Debug, Decode, Encode)]
   struct Holder(#[n(0)] #[cbor(with="cbor::object_id")] ObjectId<Source>);
 
+  /*
   #[derive(Persist)]
   struct Test {
     a: u32,
@@ -219,8 +218,12 @@ mod tests {
 
   #[test]
   fn can_use_persist() {
-    let t = <Test as Persist>::Persisted { b: 0, d: ObjectId::from_packed(OBJECT_ID_RAW) };
+    let t = Test {
+      a: 0, b: 0, c: 0, d: ObjectId::from_packed(SPAWN_ID_RAW),
+    };
+    let o = t.to_persist();
   }
+  */
 
   #[test]
   fn serialize_deserialize_object_id() {

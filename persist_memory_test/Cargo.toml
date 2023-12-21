@@ -1,10 +1,10 @@
 [package]
-name = "persist_memory"
+name = "persist_memory_test"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-persist_memory_derive = { path = "../persist_memory_derive" }
 minicbor = { features = ["derive", "alloc"] }
+persist_memory = { path = "../persist_memory" }

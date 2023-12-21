@@ -1,5 +1,5 @@
 [workspace]
-members = ["persist_memory_derive", "persist_memory"]
+members = ["persist_memory_derive", "persist_memory", "persist_memory_test"]
 
 [package]
 name = "screeps-code"

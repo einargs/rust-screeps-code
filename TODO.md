@@ -83,3 +83,4 @@ still very easy to drag and drop back in place.
   so when it doesn't have data it looks for how to find the data, but once it does, it's good.
   Can even bake in stuff like other people telling it to do something or only checking every X
   amount of time.
+- make a with path in a variant #[persist] annotation an error.

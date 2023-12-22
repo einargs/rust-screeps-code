@@ -6,10 +6,6 @@ use screeps::local::Position;
 
 use log::*;
 
-struct SourceArea {
-  open_slots: u8
-}
-
 fn is_hostile(creep: &Creep) -> bool {
   // NOTE: when this eventually changes, I'm going to need to change
   // `find_closest_hostile`.

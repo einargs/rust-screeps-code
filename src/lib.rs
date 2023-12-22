@@ -7,9 +7,10 @@
 mod body;
 mod util;
 mod storage;
-mod role;
 mod logging;
 mod memory;
+mod creeps;
+mod managers;
 
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
@@ -26,7 +27,6 @@ use screeps::{find, game};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::role::{Role, RoleTag, CreepMemory};
 use crate::memory::Memory;
 
 static INIT_LOGGING: std::sync::Once = std::sync::Once::new();
@@ -40,41 +40,11 @@ pub fn game_loop() {
   memory::with_memory(|mem| {
     //info!("count: {}", mem.creep_counter);
     spawn_loop(mem);
-    creep_loop(mem);
+    creeps::creep_loop::creep_loop(mem);
     clean_up(mem);
 
   });
   info!("done! cpu: {}", game::cpu::get_used());
-}
-
-fn initial_creep_memory(room: &Room, tag: RoleTag) -> CreepMemory {
-  use role::*;
-  match tag {
-    RoleTag::Harvester => CreepMemory::Harvester(Harvester {
-      target: HarvesterTarget::Harvest(Default::default())
-    }),
-    RoleTag::Upgrader => CreepMemory::Upgrader(
-      Upgrader::Harvest(Default::default()),
-    ),
-    RoleTag::Builder => CreepMemory::Builder(Builder {
-      target: BuilderTarget::Harvest(TargetResource::default())
-    }),
-  }
-}
-
-fn creep_loop(memory: &mut Memory) {
-  for creep in game::creeps().values() {
-    if creep.spawning() {
-      continue;
-    }
-    let name = creep.name();
-    debug!("running creep {}", name);
-    if let Some(mem) = memory.creep_mut(&name) {
-      mem.run(creep);
-    } else {
-      warn!("no memory for creep: {}", &name);
-    }
-  }
 }
 
 fn spawn_loop(memory: &mut Memory) {

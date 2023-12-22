@@ -24,6 +24,7 @@ Thumbs.db
 # Temp files
 # spacemacs temp files
 \#*\#
+.\#*
 # vim temp
 *.swp
 

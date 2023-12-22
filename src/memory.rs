@@ -54,6 +54,8 @@ pub struct Memory {
   #[n(1)] pub creeps: BTreeMap<String, CreepMemory>,
   #[n(2)] #[cbor(with = "cbor::object_id_map")]
   pub spawns: HashMap<ObjectId<StructureSpawn>, SpawnMemory>,
+  /// Tracks the last known tick so we can tell if we need to deserialize or not.
+  #[n(3)] pub last_time: u32
 }
 
 impl Memory {
@@ -88,6 +90,7 @@ impl Default for Memory {
       creep_counter: 0,
       creeps: BTreeMap::default(),
       spawns: HashMap::default(),
+      last_time: 0, // may need to avoid zero if sim starts at 0? but 1 tick delay.
     }
   }
 }
@@ -182,6 +185,7 @@ pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
       };
       fun(&mut memory);
       info!("memory state: {:?}", &memory);
+      memory.last_time = screeps::game::time();
       buffer.clear();
       to_buffer(&memory, buffer.deref_mut()).expect("encoding problem");
       let new_mem_str = to_mem_string(buffer.deref());

@@ -50,6 +50,9 @@
 - have safe mode tools
 - logging
 
+# Profiling
+I desperately need a good profiler. Look at overmind and steal ideas.
+
 # Memory
 `bitcode` is a very powerful and concise encoding system. However, I don't want
 to deal with different versions and migrations just yet. So I'm going to use
@@ -58,11 +61,14 @@ CBOR (minicbor).
 minicbor isn't generic like serde, but it doesn't matter in this situation and is
 still very easy to drag and drop back in place.
 
+- I need to setup a thing to prevent raw memory from being parsed every time by the
+  built-in memory.
+  https://github.com/Mirroar/hivemind/blob/48a9dbdde0f6931546fb1955c1f4c9e0a1bd9359/src/main.ts#L232
+- need to cache rust memory in the heap to avoid re-parsing it every time.
 
 # Rust
 - I bet I can create a custom serialization/deserialization for room names.
 - add an entries iterator to JsHashMap
-- cache the output so I don't have to deserialize every tick.
 
 # Programming Future
 - I need to finish the persist macro. But I'm going to work on something else
@@ -84,3 +90,4 @@ still very easy to drag and drop back in place.
   Can even bake in stuff like other people telling it to do something or only checking every X
   amount of time.
 - make a with path in a variant #[persist] annotation an error.
+- Checkout library darling which helps parse meta arguments for deriving stuff.

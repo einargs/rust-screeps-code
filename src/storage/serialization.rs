@@ -1,14 +1,6 @@
-// Design:
-// We want a local cache, a way to periodically persist important information to
-// the main memory, and a way to survey the game state to recreate important
-// cache information.
-// But that's for the future.
-//
-// For now I just want a simple serialize and deserialize tool.
-
-use std::cell::{RefCell};
+use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
-use std::default::{Default};
+use std::default::Default;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, BTreeMap};
 use std::fmt::Debug;
@@ -24,76 +16,8 @@ use screeps::objects::{Creep, StructureSpawn};
 use screeps::prelude::*;
 
 use log::*;
-use crate::role::{Role, RoleTag, Harvester, Builder, CreepMemory};
+use crate::memory::Memory;
 use crate::storage::cbor;
-
-#[derive(PartialEq, Debug, Encode, Decode)]
-pub struct SpawnMemory {
-  #[n(0)] next_role: RoleTag,
-}
-
-impl Default for SpawnMemory {
-  fn default() -> SpawnMemory {
-    SpawnMemory {
-      next_role: RoleTag::Harvester
-    }
-  }
-}
-
-impl SpawnMemory {
-  pub fn get_role(&mut self) -> RoleTag {
-    let tag = self.next_role;
-    self.next_role = tag.next();
-    tag
-  }
-}
-
-#[derive(PartialEq, Debug, Encode, Decode)]
-pub struct Memory {
-  #[n(0)] pub creep_counter: u32,
-  #[n(1)] pub creeps: BTreeMap<String, CreepMemory>,
-  #[n(2)] #[cbor(with = "cbor::object_id_map")]
-  pub spawns: HashMap<ObjectId<StructureSpawn>, SpawnMemory>,
-  /// Tracks the last known tick so we can tell if we need to deserialize or not.
-  #[n(3)] pub last_time: u32
-}
-
-impl Memory {
-  pub fn creep_name(&mut self, role: RoleTag) -> String {
-    let c = self.creep_counter;
-    self.creep_counter += 1;
-    format!("{:?}-{}", role, c)
-  }
-
-  pub fn initialize_creep(&mut self, name: String, mem: CreepMemory) {
-    if self.creeps.contains_key(&name) {
-      warn!("Tried to initialze the memory of an already existing creep {}", name);
-      return;
-    }
-    self.creeps.insert(name, mem);
-  }
-
-  pub fn creep_mut(&mut self, name: &String) -> Option<&mut CreepMemory> {
-    self.creeps.get_mut(name)
-  }
-
-  pub fn spawn_mut(
-    &mut self, id: ObjectId<StructureSpawn>
-  ) -> Entry<'_, ObjectId<StructureSpawn>, SpawnMemory> {
-    self.spawns.entry(id)
-  }
-}
-
-impl Default for Memory {
-  fn default() -> Memory {
-    Memory {
-      creep_counter: 0,
-      creeps: BTreeMap::default(),
-      spawns: HashMap::default(),
-      last_time: 0, // may need to avoid zero if sim starts at 0? but 1 tick delay.
-    }
-  }
-}
 
 #[derive(Debug)]
 enum MemError {
@@ -167,8 +91,8 @@ impl<'a> UpperHex for HexSlice<'a> {
 }
 
 pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
-  let index: u8 = 1;
-  raw_memory::set_active_segments(&[1]);
+  const index: u8 = 1;
+  raw_memory::set_active_segments(&[index]);
 
   MEMORY_DECODE_BUFFER.with(|buf_refcell| {
     let active_segments = raw_memory::segments();

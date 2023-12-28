@@ -221,6 +221,7 @@ version = "0.0.0"
 dependencies = [
  "base64",
  "casey",
+ "enum-iterator",
  "enum_dispatch",
  "fern",
  "js-sys",

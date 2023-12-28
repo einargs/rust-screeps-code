@@ -1,19 +1,13 @@
-use crate::role::{Role, RoleTag, CreepMemory};
+use super::role::Role;
+use super::memory::{CreepMemory, RoleTag};
 use crate::memory::Memory;
 
+use log::*;
+use screeps::prelude::*;
+use screeps::{Room, game};
+
 fn initial_creep_memory(room: &Room, tag: RoleTag) -> CreepMemory {
-  use role::*;
-  match tag {
-    RoleTag::Harvester => CreepMemory::Harvester(Harvester {
-      target: HarvesterTarget::Harvest(Default::default())
-    }),
-    RoleTag::Upgrader => CreepMemory::Upgrader(
-      Upgrader::Harvest(Default::default()),
-    ),
-    RoleTag::Builder => CreepMemory::Builder(Builder {
-      target: BuilderTarget::Harvest(TargetResource::default())
-    }),
-  }
+  todo!()
 }
 
 pub fn creep_loop(memory: &mut Memory) {
@@ -23,8 +17,10 @@ pub fn creep_loop(memory: &mut Memory) {
     }
     let name = creep.name();
     debug!("running creep {}", name);
-    if let Some(mem) = memory.creep_mut(&name) {
-      mem.run(creep);
+    if let Some(mem) = memory.creeps.get(&name) {
+      let mut local = mem.clone();
+      local.run(&creep, memory);
+      memory.creeps.insert(name, local);
     } else {
       warn!("no memory for creep: {}", &name);
     }

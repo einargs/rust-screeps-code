@@ -10,13 +10,20 @@ use screeps::traits::{Resolvable, HasTypedId};
 use screeps::constants::{ResourceType, ErrorCode};
 
 use crate::util;
+use crate::memory::Memory;
+
+pub trait Role: Clone {
+  /// Run the creep actions for this tick.
+  ///
+  /// To avoid borrowing the creep's memory twice, we just clone the self at
+  /// the start and then assign it back at the end.
+  fn run(&mut self, creep: &Creep, memory: &mut Memory);
+}
+
+/*
 use crate::storage::cbor;
 use super::target_object::TargetObject;
 use super::target_object::mk_find;
-
-pub trait Role {
-  fn run(&mut self, creep: Creep) -> ();
-}
 
 #[derive(PartialEq, Debug, Encode, Decode)]
 pub enum HarvesterTarget {
@@ -152,3 +159,4 @@ impl Role for Upgrader {
     }
   }
 }
+*/

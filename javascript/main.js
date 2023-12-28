@@ -26,6 +26,8 @@ function console_error() {
 }
 
 let halt_next_tick = false;
+let lastTime = 0;
+let lastMemory = null;
 
 module.exports.loop = function () {
     // need to freshly override the fake console object each tick
@@ -34,10 +36,19 @@ module.exports.loop = function () {
         // we've had an error on the last tick (see error catch); skip execution during the current
         // tick, asking to have our IVM immediately destroyed so we get a fresh environment next tick
         // to work around https://github.com/rustwasm/wasm-bindgen/issues/3130
-        Game.cpu.halt();
+        if (Game.cpu.halt) Game.cpu.halt();
     } else {
         try {
             if (wasm_module) {
+                if (lastTime && lastMemory && Game.time === lastTime + 1) {
+                    delete global.Memory;
+                    global.Memory = lastMemory;
+                    RawMemory._parsed = lastMemory;
+                } else {
+                    Memory.rooms;
+                    lastMemory = RawMemory._parsed;
+                }
+                lastTime = Game.time;
                 wasm_module.loop();
             } else {
                 // attempt to load the wasm only if there's enough bucket to do a bunch of work this tick

@@ -3,6 +3,7 @@
 #![allow(unused_variables)]
 // TODO: remove
 #![feature(more_qualified_paths)]
+#![feature(assert_matches)]
 
 mod body;
 mod util;
@@ -28,6 +29,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::memory::Memory;
+use crate::storage::serialization::with_memory;
+use crate::managers::city::spawn_loop;
 
 static INIT_LOGGING: std::sync::Once = std::sync::Once::new();
 
@@ -35,54 +38,16 @@ static INIT_LOGGING: std::sync::Once = std::sync::Once::new();
 pub fn game_loop() {
   INIT_LOGGING.call_once(|| {
     // show all output of Info level, adjust as needed
-    logging::setup_logging(logging::Info);
+    logging::setup_logging(logging::Debug);
   });
-  memory::with_memory(|mem| {
+  with_memory(|mem| {
     //info!("count: {}", mem.creep_counter);
-    spawn_loop(mem);
+    managers::city::spawn_loop(mem);
     creeps::creep_loop::creep_loop(mem);
     clean_up(mem);
 
   });
   info!("done! cpu: {}", game::cpu::get_used());
-}
-
-fn spawn_loop(memory: &mut Memory) {
-  use body::BodyDesign;
-  for spawn in game::spawns().values() {
-    debug!("running spawn {}", String::from(spawn.name()));
-    let mem = memory.spawn_mut(spawn.id()).or_default();
-
-    let room = spawn.room().unwrap();
-    let spawn_energy = spawn.store().get(ResourceType::Energy).unwrap_or(0);
-    let spawn_capacity = spawn.store().get_capacity(Some(ResourceType::Energy));
-    let design = BodyDesign::new()
-      .r#move(2)
-      .carry(1)
-      .work(1);
-    let body_cost = design.max_cost(spawn_capacity);
-
-    if spawn_energy < body_cost {
-      info!("need {} more energy for cost {}", body_cost - spawn_energy, body_cost);
-    } else {
-      let role = mem.get_role();
-      let name = memory.creep_name(role);
-      let body = design.scale(spawn_capacity);
-      // create a unique name, spawn.
-      match spawn.spawn_creep(&body, &name) {
-        Err(e) => warn!("couldn't spawn: {:?}", e),
-        Ok(()) => {
-          // Initialize the creep
-          debug!("initializing creep {}", &name);
-          // let creep = game::creeps().get(name).expect("couldn't get freshly created creep");
-          let creep_mem = initial_creep_memory(&room, role);
-          let tmp = name.clone();
-          memory.initialize_creep(name, creep_mem);
-          debug!("has {}", memory.creeps.contains_key(&tmp));
-        }
-      }
-    }
-  }
 }
 
 mod my_game {

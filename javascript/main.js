@@ -29,6 +29,20 @@ let halt_next_tick = false;
 let lastTime = 0;
 let lastMemory = null;
 
+global.testDistTransform = function(name) {
+    if (wasm_module) {
+        console.log(wasm_module, wasm_module.testDistTransform);
+        wasm_module.testDistTransform(name);
+    }
+}
+
+global.testMinCut = function(name) {
+    if (wasm_module) {
+        console.log(wasm_module, wasm_module.testMinCut);
+        wasm_module.testMinCut(name);
+    }
+}
+
 module.exports.loop = function () {
     // need to freshly override the fake console object each tick
     console.error = console_error;

@@ -13,7 +13,8 @@
 - mineral mining vs deposit mining
 - highways have resources?
 - remote miners
-- what's the difference between a mineral and a deposit?
+- Minerals: any room, build Extractor structure, send creep to harvest
+- Deposit: spawn in highway rooms, send creep to harvest
 - truck creeps (ferry) to move resources around
 - misc worker for labs and similar
 - melee units don't pursue things faster than them
@@ -34,14 +35,33 @@
 - creeps can pull other creeps.
 - [steamless-client](https://github.com/laverdet/screeps-steamless-client)
   lets you run a client for a private server from a browser. More up to date I guess?
+- is room size different from sim room? no
 
 # Questions
 - what are signs on spawns?
 - what is the reservations thing?
+- Why the fuck is it compiling `serde_json`?
+
+# Metrics
+I want metrics for making decisions. Obviously some should come from profiler stuff, but
+I haven't written any of that yet.
+
+- CPU spent running creeps
+- CPU leftover
+- unharvested energy from sources when they regenerate
+- harvester container buffer deltas.
 
 # Tools
 - some tool to let me run on multiples of ticks. And to avoid overlap between
   things on a timer, so I don't get a ton of things happening the same time.
+  - Maybe automatic offset?
+  - How does this integrate with my cache tool?
+  - I like the way International has a `Sleepable` base class that you can define
+    a random sleep range for.
+
+# Documentation
+- Write docs for cache
+- Write docs for `creeps/memory.rs` covering the macros and such.
 
 # buildings
 - you can have multiple spawns per room
@@ -70,8 +90,6 @@
   accounted for.
 - Calculate optimal number of work parts per source using constants.
 - Plan harvester layouts
-- transition from early worker to harvesters didn't happen?
-- is room size different from sim room?
 
 # Pathing
 IMPORTANT: when needing to implement custom search functions/finding the minimum
@@ -124,6 +142,8 @@ still very easy to drag and drop back in place.
 # Rust
 - I bet I can create a custom serialization/deserialization for room names.
 - add an entries iterator to JsHashMap
+- switch over to BTrees; more efficient esp for smaller. And much more efficient
+  when inserting one by one.
 
 # Programming Future
 - I need to do something to fix the godawful mess with positions and roomxy and shit.
@@ -155,3 +175,10 @@ impl<I> ClosestByIterator for I where I::Item: HasPosition {}
 ```
 - Then do another extension function or impl or whatever that makes this easy
   to use for things implementing `HasPosition` (which includes `Position`).
+- Calculating a way to put links between sources efficiently and deciding weather it's
+  worth it. I think the answer is that I say that I have X many links, and then do
+  a space cutting problem that fills the space around each point of interest until it
+  hits midpoints. Then I pick intersections or edges as link locations? No. The problem
+  is that I want to turn a single graph into N sub-graphs that are tightly connected.
+  Actually maybe it would be a minimum spanning tree problem. No, it's definitely a
+  graph cutting problem where I want to cut the graph into N shortest path trees.

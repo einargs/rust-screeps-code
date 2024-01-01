@@ -5,6 +5,7 @@
 #![feature(more_qualified_paths)]
 #![feature(assert_matches)]
 
+mod rooms;
 mod body;
 mod util;
 mod storage;
@@ -19,12 +20,13 @@ use std::collections::{HashMap, HashSet};
 
 use js_sys::{JsString, Object, Reflect};
 use log::*;
+use rooms::min_cut::{build_cost_matrix, min_cut_to_exit};
 use screeps::constants::{ErrorCode, Part, ResourceType};
 use screeps::enums::StructureObject;
 use screeps::local::ObjectId;
 use screeps::objects::{Creep, Source, StructureController, Room, StructureSpawn};
-use screeps::prelude::*;
-use screeps::{find, game};
+use screeps::{prelude::*, RoomXY};
+use screeps::{find, game, RoomName};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -34,7 +36,81 @@ use crate::managers::city::spawn_loop;
 
 static INIT_LOGGING: std::sync::Once = std::sync::Once::new();
 
+#[wasm_bindgen(js_name = testDistTransform)]
+pub fn test_dist_transform(name: JsString) {
+  use rooms::dist_transform::DistMatrix;
+  let name: RoomName = match name.clone().try_into() {
+    Err(e) => {
+      error!("{} was not a room name", name);
+      return
+    }
+    Ok(name) => name,
+  };
+  let room = game::rooms().get(name).unwrap();
+  let local_terrain = room.get_terrain().into();
+  let dist_matrix = DistMatrix::new(&local_terrain);
+  let visual = room.visual();
+  for x in 0..50 {
+    for y in 0..50 {
+      let xy = RoomXY::try_from((x,y)).unwrap();
+      let num = format!("{}", dist_matrix.get(xy));
+      visual.text(f32::from(x), f32::from(y), num, None);
+    }
+  }
+  // info!("dist_matrix {dist_matrix}");
+}
+
+thread_local! {
+  static WALL_DRAW: RefCell<Vec<RoomXY>> = RefCell::new(Vec::new());
+}
+
+#[wasm_bindgen(js_name = testMinCut)]
+pub fn test_min_cut(name: JsString) {
+  use rooms::min_cut::*;
+  use itertools::iproduct;
+  use std::iter::{repeat, zip};
+  info!("Called from js");
+  let name: RoomName = match name.clone().try_into() {
+    Err(e) => {
+      error!("{} was not a room name", name);
+      return
+    }
+    Ok(name) => name,
+  };
+  let room = game::rooms().get(name).unwrap();
+  let local_terrain = room.get_terrain().into();
+  let cost_matrix = build_cost_matrix(&local_terrain);
+  let sources: Vec<RoomXY> = //iproduct!(4..26, 4..26)
+    zip(4..25, repeat(15))
+    .map(|p| RoomXY::try_from(p).expect("safe"))
+    .collect();
+  //[(22, 15), (21, 25), (35, 20)]
+  let wall_xys = min_cut_to_exit(&sources, &cost_matrix, &room.visual());
+  WALL_DRAW.with(move |cell| {
+    let mut var = cell.borrow_mut();
+    *var = wall_xys;
+    debug!("Changed");
+  });
+}
+
 #[wasm_bindgen(js_name = loop)]
+pub fn dummy_loop() {
+  INIT_LOGGING.call_once(|| {
+    // show all output of Info level, adjust as needed
+    logging::setup_logging(logging::Debug);
+  });
+  WALL_DRAW.with(|cell| {
+    let wall_xys = cell.borrow();
+    let room = game::rooms().get(RoomName::new("sim").unwrap()).unwrap();
+    let visual = room.visual();
+    for xy in wall_xys.iter() {
+      let x: f32 = xy.x.u8().into();
+      let y: f32 = xy.y.u8().into();
+      visual.rect(x - 0.5, y - 0.5, 1.0, 1.0, None);
+    }
+  });
+}
+
 pub fn game_loop() {
   INIT_LOGGING.call_once(|| {
     // show all output of Info level, adjust as needed

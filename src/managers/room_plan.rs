@@ -5,7 +5,6 @@ use screeps::{
 
 use crate::mk_cache;
 
-
 /// You can turn
 struct RoomPlan {
 

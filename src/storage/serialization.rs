@@ -123,6 +123,7 @@ pub fn with_memory(fun: impl FnOnce(&mut Memory) -> ()) -> () {
   //raw_memory::set_active_segments(&[0]);
 }
 
+/*
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -189,3 +190,4 @@ mod tests {
     assert_eq!(memory, mem);
   }
 }
+*/

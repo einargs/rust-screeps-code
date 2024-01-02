@@ -29,19 +29,21 @@ let halt_next_tick = false;
 let lastTime = 0;
 let lastMemory = null;
 
-global.testDistTransform = function(name) {
-    if (wasm_module) {
-        console.log(wasm_module, wasm_module.testDistTransform);
-        wasm_module.testDistTransform(name);
+function wrap(names) {
+    for (name of names) {
+        global[name] = (...args) => {
+            if (wasm_module) {
+                wasm_module[name](...args);
+            }
+        }
     }
 }
 
-global.testMinCut = function(name) {
-    if (wasm_module) {
-        console.log(wasm_module, wasm_module.testMinCut);
-        wasm_module.testMinCut(name);
-    }
-}
+wrap([
+    'testDistTransform',
+    'testMinCut',
+    'testRoomCut',
+]);
 
 module.exports.loop = function () {
     // need to freshly override the fake console object each tick

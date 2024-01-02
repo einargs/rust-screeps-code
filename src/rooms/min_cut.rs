@@ -10,10 +10,15 @@
 // TODO: rename TileId to TileIdx. Maybe move to TileSlice.
 // TODO: rename NodeId to NodeIdx.
 
+// NOTE: I think the problem right now is with how I define the depth of things. If I go
+// and define the capacities by their distance from sources it should maybe work?
+//
+// So I guess I just need to adapt my distance transform code huh.
+
 use core::ops::{Index, IndexMut};
 use core::slice::SliceIndex;
 use std::collections::{VecDeque, BTreeSet};
-use std::cmp::min;
+use std::cmp::{max, min};
 
 use log::*;
 use screeps::{Direction, RoomXY, RoomCoordinate,
@@ -324,7 +329,7 @@ fn setup_nodes(
 
     // we only set the internal edges for s nodes; d->s is the reserve
     // capacity edge and is thus 0.
-    nodes[s].internal_edge = cost as Flow;
+    nodes[s].internal_edge = 20;
 
     // we only set the external edges for d nodes.
     for (dir, neighbor_xy) in surrounding_xy_with_dir(xy) {
@@ -371,7 +376,7 @@ fn bfs(
   // setup the sources
   for xy in sources {
     let (s, d) = node_ids_for(*xy);
-    queue.push_back((s, MAX_FLOW));
+    queue.push_back((s, 20));
     parents[s] = IsSource;
   }
 
@@ -427,48 +432,46 @@ fn dfs_get_cut(
 ) -> Vec<RoomXY> {
   // TODO: make this a normal vector.
   let mut ret: BTreeSet<(RoomCoordinate, RoomCoordinate)> = BTreeSet::new();
-  let mut visited = Box::new([false; NODES_LEN]);
-  let mut stack: Vec<NodeId> = sources.iter()
-    .map(|xy| NodeId::s_from_xy(*xy))
+  let mut visited = Box::new([false; ROOM_AREA]);
+  // TODO: I think that part of my problem is that I'm fully searching the
+  // graph instead of only checking reverse capacities.
+  let mut stack: Vec<RoomXY> = sources.iter()
+    .copied()
     .collect();
 
-  for idx in stack.iter() {
-    visited[idx.tile_idx()] = true;
+  for &xy in stack.iter() {
+    visited[xy_to_linear_index(xy)] = true;
   }
 
   // NOTE: I think I could maybe do this by just doing a dfs
   // on d nodes and checking the d node internal? Not sure. No,
   // I think that might fail too.
-  while let Some(cur) = stack.pop() {
-    let cur_xy = cur.xy();
-    let cur_node = &nodes[cur];
+  while let Some(cur_xy) = stack.pop() {
+    let (s,d) = node_ids_for(cur_xy);
+    let d_node = &nodes[d];
 
-    for (flow, edge, adj) in edges_for_node(cur, cur_node) {
-      let adj_xy = adj.xy();
+    if nodes[s].internal_edge == 0 {
+      // we record this as a place to build a wall
+      let pair = (cur_xy.x, cur_xy.y);
+      if ret.contains(&pair) {
+        warn!("Reached {cur_xy} despite having already added it to ret");
+        return vec![]
+      }
+      ret.insert(pair);
+    }
+
+    for adj_xy in surrounding_xy(cur_xy) {
+      let tile_idx = xy_to_linear_index(adj_xy);
       // Skip if it's a wall
       if cost_matrix.get(adj_xy) == 255 {
         continue
       }
-      if visited[adj.tile_idx()] {
+      if visited[tile_idx] {
         continue
       }
-      visited[adj.tile_idx()] = true;
-
-      let residual_capacity = nodes[adj][edge.reverse()];
-
-      if residual_capacity == 0 {
-        // we record this as a place to build a wall
-        let pair = (adj_xy.x, adj_xy.y);
-        if ret.contains(&pair) {
-          warn!("Reached {adj_xy} despite having already added it to ret");
-          return vec![]
-        }
-        ret.insert(pair);
-      } else {
-        // we travel here
-        stack.push(adj);
-        continue
-      }
+      visited[tile_idx] = true;
+      // we travel here
+      stack.push(adj_xy);
     }
   }
   debug!("walls found {}", ret.len());
@@ -519,7 +522,6 @@ pub fn min_cut_to_exit(
   }
 
   // Perform the max flow diagram
-  //let _ = bfs(&*exits, sources, &mut *nodes, &mut *parents);
   while let Some((new_flow, exit_idx)) = bfs(&*exits, sources, &mut *nodes, &mut *parents) {
     if new_flow == 0 {
       break
@@ -529,8 +531,8 @@ pub fn min_cut_to_exit(
       match parents[cur_idx] {
         IsSource => break,
         NotVisited => panic!("Shouldn't be possible"),
-        ExternalEdge(child_to_parent_dir, parent_idx) => {
-          let parent_to_child_dir = child_to_parent_dir.multi_rot(4);
+        ExternalEdge(parent_to_child_dir, parent_idx) => {
+          let child_to_parent_dir = parent_to_child_dir .multi_rot(4);
           nodes[parent_idx][parent_to_child_dir] -= new_flow;
           nodes[cur_idx][child_to_parent_dir] += new_flow;
           cur_idx = parent_idx;
@@ -553,7 +555,7 @@ pub fn min_cut_to_exit(
         debug!("at {xy} in {dir:?} the value is {val}");
       }
     }
-    let num = format!("{:?}", nodes[d_idx].internal_edge);
+    let num = format!("{:?}", nodes[s_idx].internal_edge);
     let (x,y): (u8,u8) = xy.into();
     let fx: f32 = x.into();
     let fy: f32 = y.into();
@@ -599,10 +601,13 @@ pub fn min_cut_to_exit(
 pub fn build_cost_matrix(terrain: &LocalRoomTerrain) -> LocalCostMatrix {
   let mut cost = LocalCostMatrix::new();
   for (xy, val) in cost.iter_mut() {
+    let offset_x = xy.x.u8().abs_diff(25);
+    let offset_y = xy.y.u8().abs_diff(25);
+    let dist = max(offset_x, offset_y);
     *val = match terrain.get(xy) {
       Terrain::Wall => 255,
-      Terrain::Plain => 11,
-      Terrain::Swamp => 11,
+      Terrain::Plain => dist,
+      Terrain::Swamp => dist,
     };
   }
   cost

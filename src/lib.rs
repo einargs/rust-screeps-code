@@ -48,7 +48,7 @@ pub fn test_dist_transform(name: JsString) {
   };
   let room = game::rooms().get(name).unwrap();
   let local_terrain = room.get_terrain().into();
-  let dist_matrix = DistMatrix::new(&local_terrain);
+  let dist_matrix = DistMatrix::new_chessboard(&local_terrain);
   let visual = room.visual();
   for x in 0..50 {
     for y in 0..50 {
@@ -58,6 +58,40 @@ pub fn test_dist_transform(name: JsString) {
     }
   }
   // info!("dist_matrix {dist_matrix}");
+}
+
+#[wasm_bindgen(js_name = testRoomCut)]
+pub fn test_room_cut(name: JsString, render: JsString) {
+  use rooms::room_cut::*;
+  use itertools::iproduct;
+  use std::iter::{repeat, zip};
+  info!("Called from js");
+  let name: RoomName = match name.clone().try_into() {
+    Err(e) => {
+      error!("{} was not a room name", name);
+      return
+    }
+    Ok(name) => name,
+  };
+  let render_str = match render.as_string() {
+    None => return,
+    Some(s) => s,
+  };
+  let render = match render_str.as_str() {
+    "height" => Render::Height,
+    "colors" => Render::Colors,
+    _ => return,
+  };
+  let room = game::rooms().get(name).unwrap();
+  let local_terrain = room.get_terrain().into();
+  room_cut(&local_terrain, room.visual(), render);
+  /*
+  let sources: Vec<RoomXY> = iproduct!(15..26, 15..26)
+    //zip(4..25, repeat(15))
+    .map(|p| RoomXY::try_from(p).expect("safe"))
+    .collect();
+  //[(22, 15), (21, 25), (35, 20)]
+  */
 }
 
 thread_local! {
@@ -80,8 +114,8 @@ pub fn test_min_cut(name: JsString) {
   let room = game::rooms().get(name).unwrap();
   let local_terrain = room.get_terrain().into();
   let cost_matrix = build_cost_matrix(&local_terrain);
-  let sources: Vec<RoomXY> = //iproduct!(4..26, 4..26)
-    zip(4..25, repeat(15))
+  let sources: Vec<RoomXY> = iproduct!(15..26, 15..26)
+    //zip(4..25, repeat(15))
     .map(|p| RoomXY::try_from(p).expect("safe"))
     .collect();
   //[(22, 15), (21, 25), (35, 20)]

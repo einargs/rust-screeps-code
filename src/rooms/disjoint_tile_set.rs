@@ -48,20 +48,44 @@ impl<'a> DisjointTileSet<'a> {
     self.meta[index as usize].rank == 0 && self.parent[index as usize] == index
   }
 
-  pub fn find(&mut self, index: u16) -> u16 {
-    let i = index as usize;
-    if self.parent[i] != index {
-      self.parent[i] = self.find(self.parent[i]);
+  pub fn is_singleton_xy(&self, xy: RoomXY) -> bool {
+    self.is_singleton(xy_to_linear_index(xy) as u16)
+  }
+
+    pub fn find(&mut self, index: u16) -> u16 {
+      let i = index as usize;
+      if self.parent[i] != index {
+        self.parent[i] = self.find(self.parent[i]);
+      }
+      self.parent[i]
     }
-    self.parent[i]
+
+    /// Gets the maxima for the set containing the index.
+    pub fn maxima_for(&mut self, index: u16) -> RoomXY {
+      let root = self.find(index);
+      linear_index_to_xy(self.meta[root as usize].maxima as usize)
+    }
+
+    /// Gets the maxima for the set containing the index.
+    #[inline]
+    pub fn maxima_for_xy(&mut self, xy: RoomXY) -> RoomXY {
+      self.maxima_for(xy_to_linear_index(xy) as u16)
+    }
+
+    /// Get only the height of the maxima for this index.
+    pub fn maxima_height_for(&mut self, index: u16) -> u8 {
+      let root = self.find(index);
+      let maxima = self.meta[root as usize].maxima as usize;
+      self.height_map.get_index(maxima)
+    }
+
+    /// Get the height of the maxima of the set this coordiate belongs to.
+  #[inline]
+  pub fn maxima_height_for_xy(&mut self, xy: RoomXY) -> u8 {
+    self.maxima_height_for(xy_to_linear_index(xy) as u16)
   }
 
-  /// Gets the maxima for the set containing the index.
-  pub fn maxima_for(&mut self, index: u16) -> RoomXY {
-    let root = self.find(index);
-    linear_index_to_xy(self.meta[root as usize].maxima as usize)
-  }
-
+  /// Get the maxima and it's height.
   pub fn maxima_and_height_for(&mut self, index: u16) -> (RoomXY, u8) {
     let root = self.find(index);
     let maxima = self.meta[root as usize].maxima as usize;

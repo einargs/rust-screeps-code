@@ -13,6 +13,8 @@
 // NOTE: I think the problem right now is with how I define the depth of things. If I go
 // and define the capacities by their distance from sources it should maybe work?
 //
+// No, maybe I need to define my capacities by their distance from the exits!
+//
 // So I guess I just need to adapt my distance transform code huh.
 
 use core::ops::{Index, IndexMut};

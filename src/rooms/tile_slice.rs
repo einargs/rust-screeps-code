@@ -7,62 +7,11 @@ use screeps::{
 /// We re-export this because it's useful.
 pub use screeps::constants::ROOM_SIZE;
 
-/// The number of tiles in a room and the size of a tile array.
-pub const ROOM_AREA: usize = ROOM_SIZE as usize * ROOM_SIZE as usize;
-
 // TODO: remove TileSlice and replace with TileMap.
 pub type TileSlice<T> = [T; ROOM_AREA];
 
-/// Converts a [`RoomXY`] coordinate pair to a linear index appropriate for use
-/// with a static [`TileSlice`].
-pub use screeps::local::linear_index_to_xy;
-
-/// Converts a linear index from the internal representation of a static array
-/// [`ROOM_AREA`] to [`RoomXY`].
-pub use screeps::local::xy_to_linear_index;
-
-#[inline]
-pub fn all_room_xy() -> impl Iterator<Item = RoomXY> {
-  (0..ROOM_AREA)
-    .map(|idx| linear_index_to_xy(idx))
-}
-
-#[inline]
-pub fn all_room_xy_and_idx() -> impl Iterator<Item = (RoomXY, usize)> {
-  (0..ROOM_AREA)
-    .map(|idx| (linear_index_to_xy(idx), idx))
-}
-
-pub fn room_edges_xy() -> impl Iterator<Item = RoomXY> {
-  use log::*;
-  use itertools::chain;
-  use std::iter::{repeat, zip};
-  let room_edges = chain!(
-    // left wall
-    zip(repeat(0), 0..50),
-    // top wall
-    zip(1..49, repeat(0)),
-    // bottom wall
-    zip(1..49, repeat(49)),
-    // right wall
-    zip(repeat(49), 0..50),
-  );
-  room_edges.map(|(x,y)| {
-    RoomXY::try_from((x,y)).expect("safe")
-  })
-}
-
-#[inline]
-pub fn surrounding_xy(xy: RoomXY) -> impl Iterator<Item = RoomXY> {
-  all::<Direction>()
-    .filter_map(move |dir| xy.checked_add_direction(dir))
-}
-
-#[inline]
-pub fn surrounding_xy_with_dir(xy: RoomXY) -> impl Iterator<Item = (Direction, RoomXY)> {
-  all::<Direction>()
-    .filter_map(move |dir| xy.checked_add_direction(dir).map(|xy| (dir, xy)))
-}
+/// Re-export all of the position related utilities.
+pub use crate::util::xy::*;
 
 #[repr(transparent)]
 pub struct TileMap<T>(TileSlice<T>);

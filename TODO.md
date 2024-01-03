@@ -86,10 +86,9 @@ I haven't written any of that yet.
 - logging
 
 # Current TODO
-- log the energy available once I have spawn extensions built to be sure it's
-  accounted for.
-- Calculate optimal number of work parts per source using constants.
-- Plan harvester layouts
+- Working on max flow min cut for wall planning
+  - Need to make the DistMatrix able to efficiently count distance from just
+    walls or walls and exits (so walls vs walls and edges).
 
 # Pathing
 IMPORTANT: when needing to implement custom search functions/finding the minimum
@@ -146,6 +145,10 @@ still very easy to drag and drop back in place.
   when inserting one by one.
 
 # Programming Future
+- I need to move a bunch of utilities from `tile_slice` to `util`. I can just
+  re-export them from `tile_slice`. Maybe make a `xy` submodule of `util` that
+  I can `*` import, and then re-export all of them from `util` for individual
+  imports.
 - I need to do something to fix the godawful mess with positions and roomxy and shit.
 - I need to finish the persist macro. But I'm going to work on something else
   right now.

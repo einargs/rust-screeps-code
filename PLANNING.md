@@ -1,3 +1,65 @@
+# Room Segmentation and Min Cut
+The idea is that I segment the room, and then turn it into a graph where the
+edges are the edges between room segements (the nodes) to run
+max flow min cut on. Segmentation is done via first doing a distance transform
+using taxicab distance, then 
+
+I think I want to create room segments around possible bunker plans, and then
+around exits. Then the max flow min cut can figure out whether you should bunker
+or fortify chokepoints. I know I can use a multiplier to weigh the cost of the
+walls involved in a bunker, but I think I can also use a matrix to weigh the
+benefits of bunkering vs being in a connected room with other important sources.
+
+I could color the bunker areas as their own regions, but it actually might be
+easier and more modular to assign them a determined "bunker cost" that you can
+pre-build a weight into. Way easier for other people to use then.
+
+## Efficiency
+Currently segmentation should run in O(n). Technically there's an amortized
+inverse ackerman in there. I do need to check to make sure that the way I'm
+using union/find satisfies the amortization, but I'm 90% sure it does.
+
+Max Flow Min Cut will run in something like O(V^2E) depending on exactly what
+algorithm I implement. I'll probably use Edmond-Karp because I'm lazy and it's a
+very small graph.
+
+## Publishing
+I want to extract this and publish it as it's own package with a nice javascript
+interface.
+
+## Older
+### Cut Problem Description
+I have a graph algorithms question. I have a 2d plane of fixed size filled with regular tiles.
+Each tile connects to the eight tiles surrounding it; four adjacent and four in the corners.
+Each tile can be a wall or a floor. I have a small set of nodes (n<6) that cannot be on the
+edge of the planar space; I'll call them sources. I then have a larger set of nodes that
+can only exist on the edges of this 2d planar space that I'll call sinks. I want to find the
+minimum set of tiles I need to change from a floor to a wall to cut the sources off from the
+sinks. Sinks are defined by being a floor tile on the edge of the 2d plane.
+
+The floor and wall tiles aren't evenly distributed; they tend to cluster together, forming
+rooms of floors.
+
+Obviously, this can be solved using max-flow min-cut. However, it feels like there should be
+a way to optimize it further taking advantage of the fact that the graph can be embedded into
+a plane, is unweighted and that the tiles have distance between them (I think the mathematical
+way to say it would be that the vertices form a metric space?).
+
+Reading up on the subject I found my way towards the planar separator theorem, tree decomposition,
+and delauny triangulation among others. At first I was excited by planar separation, but it
+doesn't actually seem to solve my problem. Googling and looking through papers generally led
+me to papers about optimizing max-flow min-cut for computer vision.
+
+### My (Bad) Approach
+I could run a distance transform using taxicab distance (so that it tracks the number of walls
+to cut it off) and then use the watershed algorithm to identify rooms of open floors and edges
+betweeen them. This just creates a new graph then, though a far smaller one. Because the shapes
+of rooms are irregular, you would have multiple maximums within a large room. So I would want
+to apply a heuristic to merge them.
+
+At that point I think it still becomes just a max-flow min-cut problem, though on a far smaller
+graph. Which I think is probably still a good optimization.
+
 # Math
 The road ratio means that to maintain a constant 1 tick speed, we want to have
 every CARRY part have a MOVE part, and every 2 WORK parts to have a MOVE part.
@@ -50,37 +112,12 @@ m: energy/part = 2
 ## TODO
 - I need to do the math on towers vs roving wall/rampart repairers.
 
-## Cut Problem Description
-I have a graph algorithms question. I have a 2d plane of fixed size filled with regular tiles.
-Each tile connects to the eight tiles surrounding it; four adjacent and four in the corners.
-Each tile can be a wall or a floor. I have a small set of nodes (n<6) that cannot be on the
-edge of the planar space; I'll call them sources. I then have a larger set of nodes that
-can only exist on the edges of this 2d planar space that I'll call sinks. I want to find the
-minimum set of tiles I need to change from a floor to a wall to cut the sources off from the
-sinks. Sinks are defined by being a floor tile on the edge of the 2d plane.
-
-The floor and wall tiles aren't evenly distributed; they tend to cluster together, forming
-rooms of floors.
-
-Obviously, this can be solved using max-flow min-cut. However, it feels like there should be
-a way to optimize it further taking advantage of the fact that the graph can be embedded into
-a plane, is unweighted and that the tiles have distance between them (I think the mathematical
-way to say it would be that the vertices form a metric space?).
-
-Reading up on the subject I found my way towards the planar separator theorem, tree decomposition,
-and delauny triangulation among others. At first I was excited by planar separation, but it
-doesn't actually seem to solve my problem. Googling and looking through papers generally led
-me to papers about optimizing max-flow min-cut for computer vision.
-
-### My (Bad) Approach
-I could run a distance transform using taxicab distance (so that it tracks the number of walls
-to cut it off) and then use the watershed algorithm to identify rooms of open floors and edges
-betweeen them. This just creates a new graph then, though a far smaller one. Because the shapes
-of rooms are irregular, you would have multiple maximums within a large room. So I would want
-to apply a heuristic to merge them.
-
-At that point I think it still becomes just a max-flow min-cut problem, though on a far smaller
-graph. Which I think is probably still a good optimization.
+## Tower Math
+I think I can calculate some kind of coverage distribution for towers to
+optimize placement based on a set of weighted metrics. So stuff like:
+- close to walls
+- close to potential enemy places
+- minimizing potential safe spots for enemies (minimax algorithm?)
 
 ## Useful Math
 - minimum spanning tree

@@ -13,7 +13,10 @@
 // NOTE: I think there's an efficient priority flood algorithm I could use but I
 // don't care. https://arxiv.org/abs/1511.04463
 
+use std::assert_matches;
+use std::fmt;
 use std::collections::{VecDeque, BTreeSet, HashSet, BTreeMap};
+use std::hash::Hash;
 
 use log::*;
 
@@ -25,54 +28,35 @@ use super::disjoint_tile_set::DisjointTileSet;
 use super::tile_slice::*;
 use super::{dist_transform::*, tile_slice::all_room_xy};
 
-const TAXICAB_DIRECTIONS: [Direction; 4] = [
-  Direction::Top,
-  Direction::Bottom,
-  Direction::Left,
-  Direction::Right,
-];
-
 type Height = u8;
 
 /// Color is used to identify which room a source belongs to when performing
 /// bfs.
-type Color = u16;
-
-/// 0 means no color has been assigned yet.
-const NO_COLOR: Color = 0;
-
-/// 1 means it's on the border.
-const BORDER_COLOR: Color = 1;
-
-/// The first valid color.
-const START_COLOR: Color = 2;
-
-struct Maxima {
-  xy: RoomXY,
-  // TODO: may remove this field
-  height: Height,
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum Color {
+  Empty,
+  Border,
+  Pending(ColorIdx),
+  Resolved(ColorIdx)
 }
 
-/// These are like maxima, but they have been assigned a unique
-/// color identifier. adjacent maxima are given the same
-struct FloodSource {
-  xy: RoomXY,
-  height: Height,
-  color: Color
+impl fmt::Display for Color {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Color::Empty => write!(f, "E"),
+      Color::Border => write!(f, "B"),
+      Color::Pending(idx) => write!(f, "P{idx}"),
+      Color::Resolved(idx) => write!(f, "{idx}"),
+    }
+  }
 }
 
-fn taxicab_adjacent(xy: RoomXY) -> impl Iterator<Item = RoomXY> {
-  use Direction::*;
-  TAXICAB_DIRECTIONS.into_iter()
-    .filter_map(move |dir| xy.checked_add_direction(dir))
-}
+/// The data type used to represent the color index.
+type ColorIdx = u8;
 
+// TODO: build a custom data type keeps track of the number of colors
+// inside this.
 type ColorMap = TileMap<Color>;
-
-// Here's my idea: what if we do two passes using dts or something
-// similar.
-// one to identify the maxima, and then we do another flooding
-// pass to identify the borders.
 
 // TODO: document logic/process
 /// Visit a tile to add it to the DisjointTileSet regions.
@@ -135,11 +119,11 @@ fn link_to_maxima<'a>(
 fn color_disjoint_tile_set(
   height_map: &DistMatrix,
   dts: &mut DisjointTileSet,
-) -> (Box<ColorMap>, Color) {
-  let mut color_map = ColorMap::new_box(0);
-  let mut color_count: Color = START_COLOR;
+) -> (Box<ColorMap>, ColorIdx) {
+  let mut color_map = ColorMap::new_box(Color::Empty);
+  let mut color_count: ColorIdx = 0;
   // tracks colors assigned to already encountered sets
-  let mut color_index: BTreeMap<u16, Color> = BTreeMap::new();
+  let mut color_index: BTreeMap<u16, ColorIdx> = BTreeMap::new();
 
   // color the map and create a list of indexes.
   for idx in 0..(ROOM_AREA as u16) {
@@ -147,12 +131,12 @@ fn color_disjoint_tile_set(
       continue
     }
     let set = dts.find(idx);
-    let color = *color_index.entry(set).or_insert_with(|| {
+    let color_idx = *color_index.entry(set).or_insert_with(|| {
       let val = color_count;
       color_count += 1;
       val
     });
-    color_map[idx as usize] = color;
+    color_map[idx as usize] = Color::Resolved(color_idx);
   }
   debug!("Created {} colors!", color_count - 1);
 
@@ -195,13 +179,6 @@ fn calculate_local_maxima(
   (maxima_map.into_values(), dts)
 }
 
-/// Check if two colors are different values, and that neither
-/// is NO_COLOR.
-#[inline]
-fn diff_color(a: Color, b: Color) -> bool {
-  a != NO_COLOR && b != NO_COLOR && a != b
-}
-
 /// Flood a color map, avoiding coloring a cell when it would cause
 /// diagonals or adjacents of one color to touch another color.
 /// Returns a list of coordinates that are on the border between
@@ -211,54 +188,85 @@ fn diff_color(a: Color, b: Color) -> bool {
 fn flood_color_map(
   height_map: &DistMatrix,
   maximas: impl Iterator<Item = RoomXY>
-) -> (Box<ColorMap>, Color, Vec<RoomXY>) {
+) -> (Box<ColorMap>, ColorIdx, Vec<RoomXY>) {
   use priority_queue::PriorityQueue;
   let mut queue: PriorityQueue<RoomXY, Height> = PriorityQueue::new();
   let mut borders: Vec<RoomXY> = Vec::new();
-  let mut color_map = ColorMap::new_box(NO_COLOR);
+  let mut color_map = ColorMap::new_box(Color::Empty);
 
-  let mut color_count = START_COLOR;
+  let mut color_count: ColorIdx = 0;
   for maxima in maximas {
-    color_map[maxima] = color_count;
+    color_map[maxima] = Color::Resolved(color_count);
     color_count += 1;
     let height = height_map.get(maxima);
     queue.push(maxima, height);
   }
 
+  // NOTE: not sure if we want taxicab or chessboard.
+  let get_neighbors = surrounding_xy;
+
   while let Some((xy, height)) = queue.pop() {
     let xy_color = color_map[xy];
-    // if we've been changed to be a border, we skip
-    if xy_color == BORDER_COLOR {
-      continue
-    }
-    // we should have a color assigned.
-    assert_ne!(xy_color, NO_COLOR, "color at {xy} did not exist; instead {xy_color}");
-    // we use taxicab because that's the distance metric
-    // used, and otherwise it could mess up the queue
-    // by jumping down 2 levels instead of 1.
-    // well, the priority queue would probably keep it safe, but
-    // why bother. This should keep the size of the queue smaller
-    // over time at least.
-    for adj in surrounding_xy(xy) {
-      if height_map.get(adj) == 0 {
+    let xy_height = height_map.get(xy);
+    // The maxima are the only points that should have a color when
+    // this stage happens.
+    let xy_color_idx = match xy_color {
+      Color::Pending(color) => {
+        // We check to see if there's a resolved neighbor that has a different color.
+        // If there is, we become a border and continue to the next tile.
+        let neighboring_other_color = get_neighbors(xy).any(|adj| match color_map[adj] {
+          Color::Resolved(other_color) => other_color != color,
+          // if it's a pending, we'll end up on that pending looking at this
+          // tile later.
+          _ => false,
+        });
+        if neighboring_other_color {
+          color_map[xy] = Color::Border;
+          continue
+        } else {
+          color_map[xy] = Color::Resolved(color);
+        }
+        color
+      }
+      // only the maxima should have a resolved color right now
+      Color::Resolved(color) => color,
+      Color::Border | Color::Empty => {
+        panic!("color at {xy} was {xy_color} when it should be pending or resolved (if it's a maxima)");
+      }
+    };
+
+    for adj in get_neighbors(xy) {
+      let adj_height = height_map.get(adj);
+      // TODO: maybe skip if higher than xy_height. If it's higher, someone else
+      // will reach it? that's just a minor optimization I think? If it's
+      // taxicab, then definitely there's no way for a tile to see a higher
+      // piece that isn't in the queue, but with chessboard I think there is.
+      // Imagine: 3 2 3, where xy is the left 3. We get to the 2 as adj, which
+      // can then see the right 3.
+
+      // we skip walls
+      if adj_height == 0 {
         continue
       }
+
       match color_map[adj] {
-        BORDER_COLOR => {
-          continue
-        }
-        NO_COLOR => {
+        Color::Empty => {
           let adj_height = height_map.get(adj);
 
-          color_map[adj] = color_map[xy];
+          color_map[adj] = Color::Pending(xy_color_idx);
           queue.push(adj, adj_height);
         }
+        _ => {
+          continue
+        }
+        /*
         other_color => {
           if other_color != xy_color {
             color_map[adj] = BORDER_COLOR;
             break
           }
         }
+        */
       }
     }
   }
@@ -272,12 +280,17 @@ pub enum Render {
 }
 
 /// Generate a nice color for our visuals.
-fn calculate_color(total_count: Color, color: Color) -> String {
-  if matches!(color, NO_COLOR | BORDER_COLOR) {
-    return "#000000".to_string()
-  }
-  let size = total_count - START_COLOR;
-  let index = color - START_COLOR;
+fn calculate_color(size: ColorIdx, color: Color) -> String {
+  let index = match color {
+    Color::Border | Color::Empty => {
+      return "#000000".to_string()
+    }
+    Color::Pending(_) => {
+      error!("color was pending after map finalized");
+      return "#FF0000".to_string()
+    }
+    Color::Resolved(idx) => idx,
+  };
   let percentage = f64::from(index) / f64::from(size);
   let radians: f64 = percentage * core::f64::consts::TAU;
   // see: https://stackoverflow.com/questions/10731147/evenly-distributed-color-range-depending-on-a-count
@@ -291,35 +304,34 @@ fn calculate_color(total_count: Color, color: Color) -> String {
   let red: f64 = y + v/0.88;
   let green: f64 = y - 0.38 * u - 0.58 * v;
   let blue: f64 = y + u/0.49;
-  // debug!("Radians: {radians} RGB: {red} {green} {blue}");
 
-  fn convert(val: f64) -> f64 {
+  /// Convert one of the generated RGB values into an actual
+  /// byte value.
+  fn convert(val: f64) -> u8 {
     let rgb_percent = val.clamp(0.0, 2.0) / 2.0;
     let rgb_float = rgb_percent * 255.0;
-    rgb_float.floor()
+    rgb_float.floor() as u8
   }
 
   // now we turn our floats into bytes
   // we have to clamp because the YUV color space is bizzare.
-  let redb: u8 = convert(red) as u8;
-  let greenb: u8 = convert(green) as u8;
-  let blueb: u8 = convert(blue) as u8;
+  let redb: u8 = convert(red);
+  let greenb: u8 = convert(green);
+  let blueb: u8 = convert(blue);
 
   // then we format
   let out = format!("#{:02x}{:02x}{:02x}", redb, greenb, blueb);
 
-  /*
-  if log {
-    debug!("color {color} {radians} ({red} : {}, {green} : {}, {blue} : {}) {out}",
-           convert(red), convert(green), convert(blue));
-  }
-  */
-
   out
 }
 
-/// Search through a color map, trav
-pub fn room_cut(terrain: &LocalRoomTerrain, visual: RoomVisual, render: Render) -> Vec<RoomXY> {
+// TODO: add the ability to pass in a list of sources to cause to unify.
+/// Segment a room.
+pub fn room_cut(
+  terrain: &LocalRoomTerrain,
+  visual: RoomVisual,
+  render: Render
+) -> Vec<RoomXY> {
   let height_map = DistMatrix::new_taxicab(terrain);
   // let maximas: Vec<Maxima> = find_maxima(&dist_matrix).collect();
   let (maxima_iter, mut maxima_dts) = calculate_local_maxima(&height_map);
@@ -334,11 +346,10 @@ pub fn room_cut(terrain: &LocalRoomTerrain, visual: RoomVisual, render: Render) 
     let (x,y): (u8,u8) = xy.into();
     let fx: f32 = x.into();
     let fy: f32 = y.into();
-    let num = match &render {
-      Render::Height => height_map.get(xy) as u16,
-      Render::Colors => disp_color_map[xy],
+    let num_str = match &render {
+      Render::Height => format!("{:?}", height_map.get(xy)),
+      Render::Colors => format!("{}", disp_color_map[xy]),
     };
-    let num_str = format!("{:?}", num);
     let style = if maxima_set.contains(&xy) {
       TextStyle::default()
         .color("#FFFFFF")

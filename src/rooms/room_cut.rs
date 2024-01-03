@@ -227,15 +227,19 @@ fn flood_color_map(
 
   while let Some((xy, height)) = queue.pop() {
     let xy_color = color_map[xy];
+    // if we've been changed to be a border, we skip
+    if xy_color == BORDER_COLOR {
+      continue
+    }
     // we should have a color assigned.
-    assert!(xy_color > 1, "color at {xy} did not exist; instead {xy_color}");
+    assert_ne!(xy_color, NO_COLOR, "color at {xy} did not exist; instead {xy_color}");
     // we use taxicab because that's the distance metric
     // used, and otherwise it could mess up the queue
     // by jumping down 2 levels instead of 1.
     // well, the priority queue would probably keep it safe, but
     // why bother. This should keep the size of the queue smaller
     // over time at least.
-    for adj in taxicab_adjacent(xy) {
+    for adj in surrounding_xy(xy) {
       if height_map.get(adj) == 0 {
         continue
       }
@@ -251,7 +255,7 @@ fn flood_color_map(
         }
         other_color => {
           if other_color != xy_color {
-            color_map[xy] = BORDER_COLOR;
+            color_map[adj] = BORDER_COLOR;
             break
           }
         }

@@ -69,8 +69,6 @@ fn mk_with_dirs<const N: usize>(
       _ => MAX_DIST,
     };
   }
-  let test_xy = RoomXY::try_from((0,10)).unwrap();
-  debug!("{}: {:?}", test_xy, terrain.get(test_xy));
 
   // We do our first pass going from the top left to the bottom right
 

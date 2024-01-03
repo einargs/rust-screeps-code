@@ -236,30 +236,26 @@ fn flood_color_map(
     // why bother. This should keep the size of the queue smaller
     // over time at least.
     for adj in taxicab_adjacent(xy) {
-      /*
+      if height_map.get(adj) == 0 {
+        continue
+      }
       match color_map[adj] {
         BORDER_COLOR => {
           continue
         }
+        NO_COLOR => {
+          let adj_height = height_map.get(adj);
+
+          color_map[adj] = color_map[xy];
+          queue.push(adj, adj_height);
+        }
         other_color => {
           if other_color != xy_color {
             color_map[xy] = BORDER_COLOR;
+            break
           }
-          continue
         }
-        _ => (),
       }
-      */
-      if color_map[adj] != NO_COLOR {
-        continue
-      }
-      if height_map.get(adj) == 0 {
-        continue
-      }
-      let adj_height = height_map.get(adj);
-
-      color_map[adj] = color_map[xy];
-      queue.push(adj, adj_height);
     }
   }
 
@@ -273,7 +269,7 @@ pub enum Render {
 
 /// Generate a nice color for our visuals.
 fn calculate_color(total_count: Color, color: Color) -> String {
-  if color == NO_COLOR {
+  if matches!(color, NO_COLOR | BORDER_COLOR) {
     return "#000000".to_string()
   }
   let size = total_count - START_COLOR;

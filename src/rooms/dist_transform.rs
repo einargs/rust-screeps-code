@@ -40,15 +40,11 @@ fn apply_directions<const N: usize>(
   // cells + 1 and it's current value.
   let new_value = directions
     .iter()
-    .map(|dir| {
-      // We use 0 because this will only happen for places along the edges,
-      // we want the edges to be zero.
-      let val = xy.checked_add_direction(*dir)
-        .map_or(0, |adjacent| xy_access(adjacent, &data) + 1);
-      /*if xy.x.u8() == ROOM_SIZE - 4 && xy.y.u8() > 25 {
-      debug!("{dir:?} {val} at {} {}", xy.x.u8(), xy.y.u8());
-    }*/
-      val
+    .filter_map(|dir| {
+      // we want to make sure that exits have the correct height, so we
+      // don't default to 0 when we end up out of bounds.
+      xy.checked_add_direction(*dir)
+        .map(|adjacent| xy_access(adjacent, &data) + 1)
     })
     .chain(std::iter::once(prev))
     .min()
@@ -73,6 +69,8 @@ fn mk_with_dirs<const N: usize>(
       _ => MAX_DIST,
     };
   }
+  let test_xy = RoomXY::try_from((0,10)).unwrap();
+  debug!("{}: {:?}", test_xy, terrain.get(test_xy));
 
   // We do our first pass going from the top left to the bottom right
 

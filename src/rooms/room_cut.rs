@@ -14,6 +14,7 @@
 // don't care. https://arxiv.org/abs/1511.04463
 
 use std::assert_matches;
+use std::collections::HashMap;
 use std::fmt;
 use std::collections::{VecDeque, BTreeSet, HashSet, BTreeMap};
 use std::hash::Hash;
@@ -259,19 +260,48 @@ fn flood_color_map(
         _ => {
           continue
         }
-        /*
-        other_color => {
-          if other_color != xy_color {
-            color_map[adj] = BORDER_COLOR;
-            break
-          }
-        }
-        */
       }
     }
   }
 
   (color_map, color_count, borders)
+}
+
+/// This is an adjacency list based graph of room segments.
+struct SegmentGraphAdj(Vec<Vec<(ColorIdx, Height)>>);
+
+impl SegmentGraphAdj {
+  fn new(color_count: ColorIdx) -> SegmentGraphAdj {
+    use std::iter::repeat;
+    let iter = repeat(Vec::new()).take(color_count as usize);
+    SegmentGraphAdj(iter.collect())
+  }
+
+  fn get(&self, a: ColorIdx, b: ColorIdx) -> Option<Height> {
+    for (adj_color, height) in self.0[a as usize].iter() {
+      if adj_color == b {
+        return Some(height);
+      }
+    }
+    return None;
+  }
+
+  fn insert(&mut self, a: ColorIdx, b: ColorIdx, new_height: Height) {
+    use std::cmp::max;
+    for (adj_color, old_height) in self.0[a as usize].iter_mut() {
+      if adj_color == b {
+        *old_height = max(*old_height, new_height);
+        return;
+      }
+    }
+    self.0[a as usize].push((b, new_height));
+  }
+}
+
+fn create_segment_graph(color_map: &ColorMap, color_count: ColorIdx, borders: &[RoomXY]) -> SegmentGraphAdj {
+  for border_xy in borders {
+
+  }
 }
 
 pub enum Render {

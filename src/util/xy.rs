@@ -64,6 +64,7 @@ pub fn room_edges_xy() -> impl Iterator<Item = RoomXY> {
   })
 }
 
+/// Get all valid nearby coordinates including diagonals.
 #[inline]
 pub fn surrounding_xy(xy: RoomXY) -> impl Iterator<Item = RoomXY> {
   all::<Direction>()

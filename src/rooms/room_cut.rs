@@ -9,6 +9,12 @@
 //! NOTE: It may be beneficial to merge nearby maxima when identifiying rooms.
 //! Possibly via some kind of scaling factor where the further from zero, the
 //! further they can be to each other and still be merged.
+//!
+//! NOTE: there's a minor situation where we can have suboptimal wall placement:
+//! 0 1 2 1 0 0
+//! 0 1 2 2 1 0
+//! In this situation, it currently can't tell that the 3 wide chokepoint is
+//! superior to the 4 wide chokepoint.
 
 // NOTE: I think there's an efficient priority flood algorithm I could use but I
 // don't care. https://arxiv.org/abs/1511.04463
@@ -16,9 +22,12 @@
 use std::assert_matches;
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::{Index, IndexMut, Range};
+use std::cmp::{max, min};
 use std::collections::{VecDeque, BTreeSet, HashSet, BTreeMap};
 use std::hash::Hash;
 
+use itertools::iproduct;
 use log::*;
 
 use screeps::{
@@ -223,6 +232,7 @@ fn flood_color_map(
         });
         if neighboring_other_color {
           color_map[xy] = Color::Border;
+          borders.push(xy);
           continue
         } else {
           color_map[xy] = Color::Resolved(color);
@@ -267,7 +277,113 @@ fn flood_color_map(
   (color_map, color_count, borders)
 }
 
+/// Contains information about a border between two segments.
+#[derive(Clone, Debug, Default)]
+struct SegmentBorder {
+  walls: Vec<RoomXY>
+}
+
+impl SegmentBorder {
+  #[inline]
+  fn add_wall(&mut self, xy: RoomXY) {
+    self.walls.push(xy);
+  }
+
+  #[inline]
+  fn len(&self) -> usize {
+    self.walls.len()
+  }
+
+  #[inline]
+  fn walls(&self) -> impl Iterator<Item = RoomXY> {
+    self.walls.iter()
+  }
+}
+
+/// Data structure representing information about the borders
+/// between segments.
+///
+/// We unique the index by ordering them.
+struct SegmentBorders(BTreeMap<(ColorIdx, ColorIdx), SegmentBorder>);
+
+/// Quick utility function.
+fn unique_pairs(range: Range<usize>) -> impl Iterator<Item = (usize, usize)> {
+  use std::iter::repeat;
+  range.clone().flat_map(move |i| repeat(i).zip((i+1)..range.end))
+}
+
+impl SegmentBorders {
+  fn new(
+    color_map: &ColorMap,
+    border_xys: &[RoomXY]
+  ) -> SegmentBorders {
+    use Color::*;
+    use itertools::Itertools;
+
+    #[inline]
+    fn adj_color_pairs(
+      color_map: &ColorMap,
+      neighbors: impl Iterator<Item = RoomXY>
+    ) -> impl Iterator<Item = (ColorIdx, ColorIdx)> {
+      let adj_colors: Vec<ColorIdx> = neighbors
+        .filter_map(|adj| match color_map[adj] {
+          Resolved(color) => Some(color),
+          _ => None,
+        })
+      // it would probably be faster to insert and use .contains
+      // since this uses a hash map, but not worth it.
+        .unique()
+        .collect();
+      unique_pairs(0..adj_colors.len())
+        .map(move |(i,j)| (adj_colors[i], adj_colors[j]))
+    }
+
+    let mut seg_borders = SegmentBorders(BTreeMap::new());
+    for border_xy in border_xys {
+      // we do two rounds: an initial round using taxicab and creates
+      // borders if they don't exist already, and then a second that
+      // only adds to existing borders.
+
+      // we use taxicab adjacent so that in this situation:
+      // 1 1 1 E 2
+      // B B B E 2
+      // 3 3 B 2 2
+      // we don't end up with 1 connected to 2.
+      // However, we still want  the corner piece to be included in
+      // 1-3 and 3-2. This is done in the second phase.
+      for (a,b) in adj_color_pairs(color_map, taxicab_adjacent(*border_xy)) {
+        seg_borders.get_mut_or_default(a, b);
+      }
+
+      for (a,b) in adj_color_pairs(color_map, surrounding_xy(*border_xy)) {
+        if let Some(border) = seg_borders.get_mut(a, b) {
+          border.add_wall(*border_xy);
+        }
+      }
+    }
+
+    seg_borders
+  }
+
+  fn get_mut_or_default(&mut self, a: ColorIdx, b: ColorIdx) -> &mut SegmentBorder {
+    let idx = if a < b { (a,b) } else { (b,a) };
+    self.0.entry(idx).or_default()
+  }
+
+  fn get_mut(&mut self, a: ColorIdx, b: ColorIdx) -> Option<&mut SegmentBorder> {
+    let idx = if a < b { (a,b) } else { (b,a) };
+    self.0.get_mut(&idx)
+  }
+
+  #[inline]
+  fn iter(&self) -> impl Iterator<Item = (ColorIdx, ColorIdx, &SegmentBorder)> {
+    self.0.iter().map(|((a,b), border)| (*a, *b, border))
+  }
+}
+
 /// This is an adjacency list based graph of room segments.
+///
+/// TODO: try using this instead of the 2d array implementation and profile.
 struct SegmentGraphAdj(Vec<Vec<(ColorIdx, Height)>>);
 
 impl SegmentGraphAdj {
@@ -279,8 +395,8 @@ impl SegmentGraphAdj {
 
   fn get(&self, a: ColorIdx, b: ColorIdx) -> Option<Height> {
     for (adj_color, height) in self.0[a as usize].iter() {
-      if adj_color == b {
-        return Some(height);
+      if *adj_color == b {
+        return Some(*height);
       }
     }
     return None;
@@ -289,7 +405,7 @@ impl SegmentGraphAdj {
   fn insert(&mut self, a: ColorIdx, b: ColorIdx, new_height: Height) {
     use std::cmp::max;
     for (adj_color, old_height) in self.0[a as usize].iter_mut() {
-      if adj_color == b {
+      if *adj_color == b {
         *old_height = max(*old_height, new_height);
         return;
       }
@@ -298,10 +414,307 @@ impl SegmentGraphAdj {
   }
 }
 
-fn create_segment_graph(color_map: &ColorMap, color_count: ColorIdx, borders: &[RoomXY]) -> SegmentGraphAdj {
-  for border_xy in borders {
+/// Enum for whether a segment node is a source -- somewhere
+/// we want to build -- a sink -- next to exits -- or just
+/// a normal intermediary node.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SegmentKind {
+  Source,
+  Sink,
+  Normal
+}
 
+/// Create a map indicating whether a colored
+/// segment of the room is a source, sink, or neither.
+///
+/// If some of the sources are located in a room that
+/// is next to exits, it's labeled as a sink, because
+/// we'll instead just build walls around the buildings
+/// themselves instead of trying to cut stuff off at a
+/// border.
+fn make_segment_kind_map(
+  color_count: ColorIdx,
+  color_map: &ColorMap,
+  sources: &[RoomXY]
+) -> Vec<SegmentKind> {
+  use SegmentKind::*;
+  let mut segment_kinds = vec![Normal; color_count as usize];
+
+  // Mark the sources
+  for xy in sources.iter().copied() {
+    match color_map[xy] {
+      Color::Resolved(idx) => {
+        segment_kinds[idx as usize] = Source;
+      },
+      Color::Border => {
+        // I guess we just add all adjacent rooms to this.
+        for adj_xy in surrounding_xy(xy) {
+          match color_map[xy] {
+            Color::Resolved(idx) => {
+              segment_kinds[idx as usize] = Source;
+            },
+            _ => (),
+          }
+        }
+      }
+      Color::Empty => {
+        warn!("source {xy} is a wall");
+      }
+      Color::Pending(_) => {
+        panic!("shouldn't be any pending colors at this stage");
+      }
+    }
   }
+
+  // Mark the sinks (segments next to exits). Important that
+  // we do this after sources; see fn docs.
+  for xy in room_edges_xy() {
+    match color_map[xy] {
+      Color::Resolved(idx) => {
+        segment_kinds[idx as usize] = Sink;
+      },
+      _ => (),
+    }
+  }
+
+  segment_kinds
+}
+
+struct SegmentGraph {
+  /// Number of colors in the graph.
+  color_count: ColorIdx,
+  /// Mapping of segments to their kind.
+  segment_kinds: Vec<SegmentKind>,
+  /// the actual 2d array backing this graph.
+  graph: Vec<Height>
+}
+
+// TODO: once the bunker vs room border logic is built
+// come back and check on this.
+impl SegmentGraph {
+  fn new(
+    color_count: ColorIdx,
+    color_map: &ColorMap,
+    sources: &[RoomXY]
+  ) -> SegmentGraph {
+    let size = color_count as usize;
+
+    let mut graph = SegmentGraph {
+      color_count,
+      segment_kinds: make_segment_kind_map(
+        color_count, color_map, sources),
+      graph: vec![0; size*size],
+    };
+
+    max_flow_transform(&mut graph);
+
+    graph
+  }
+
+  #[inline]
+  fn internal_index(&self, a: ColorIdx, b: ColorIdx) -> usize {
+    a as usize * self.color_count as usize + b as usize
+  }
+
+  fn get(&self, a: ColorIdx, b: ColorIdx) -> Option<Height> {
+    let idx = self.internal_index(a, b);
+    Some(self.graph[idx]).filter(|height| *height != 0)
+  }
+
+  fn insert(&mut self, a: ColorIdx, b: ColorIdx, new_height: Height) {
+    let idx = self.internal_index(a, b);
+    self.graph[idx] = max(self.graph[idx], new_height);
+  }
+
+  fn adjacent<'a>(&'a self, node: ColorIdx) -> impl Iterator<Item = (ColorIdx, Height)> + 'a {
+    (0..self.color_count).filter_map(move |idx| {
+      self.get(node, idx).map(|height| (idx, height))
+    })
+  }
+
+  #[inline]
+  fn segment_kind(&self, node: ColorIdx) -> SegmentKind {
+    self.segment_kinds[node as usize]
+  }
+
+  fn segments_of_kind<'a>(&'a self, kind: SegmentKind) -> impl Iterator<Item = ColorIdx> + 'a {
+    (0..self.color_count).filter(move |idx| self.segment_kind(*idx) == kind)
+  }
+
+  fn is_cut_edge(&self, a: ColorIdx, b: ColorIdx) -> bool {
+    let ab = self[(a,b)];
+    let ba = self[(b,a)];
+    a != b && min(ab, ba) == 0 && max(ab, ba) > 0
+  }
+}
+
+impl Index<(ColorIdx, ColorIdx)> for SegmentGraph {
+  type Output = Height;
+  fn index(&self, (a,b): (ColorIdx, ColorIdx)) -> &Height {
+    &self.graph[self.internal_index(a, b)]
+  }
+}
+
+impl IndexMut<(ColorIdx, ColorIdx)> for SegmentGraph {
+  fn index_mut(&mut self, (a,b): (ColorIdx, ColorIdx)) -> &mut Self::Output {
+    let idx = self.internal_index(a, b);
+    &mut self.graph[idx]
+  }
+}
+
+impl fmt::Display for SegmentGraph {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    for a in 0..self.color_count {
+      write!(f, "{}->", a)?;
+      for b in 0..self.color_count {
+        let ab = self[(a,b)];
+        let ba = self[(b,a)];
+        if max(ab, ba) > 0 {
+          write!(f, " {b}: {ab}, {ba};")?;
+        }
+      }
+      write!(f, "\n")?;
+    }
+    Ok(())
+  }
+}
+
+/// Build the initial form of the room segment graph we'll perform min cut on.
+fn create_segment_graph(
+  color_map: &ColorMap,
+  color_count: ColorIdx,
+  borders: &SegmentBorders,
+  height_map: &DistMatrix,
+  sources: &[RoomXY]
+) -> SegmentGraph {
+  use Color::*;
+  let mut graph = SegmentGraph::new(
+    color_count, color_map, sources);
+  for (a, b, border) in borders.iter() {
+    let height = border.len() as u8;
+    graph.insert(a, b, height);
+    graph.insert(b, a, height);
+  }
+  graph
+}
+
+/// Parents for the min cut max flow algorithm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SegmentParent {
+  NotVisited,
+  Segment(ColorIdx),
+  IsSource
+}
+
+/// Returns the smallest edge found between two nodes in
+/// this path to an exit.
+fn max_flow_bfs(
+  graph: &mut SegmentGraph,
+  parents: &mut [SegmentParent]
+) -> Option<(ColorIdx, Height)> {
+  debug!("Started max flow bfs");
+  use std::cmp::min;
+  use SegmentParent::*;
+  parents.fill(NotVisited);
+  let mut queue: VecDeque<(ColorIdx, Height)> = VecDeque::new();
+
+  for source_idx in graph.segments_of_kind(SegmentKind::Source) {
+    parents[source_idx as usize] = IsSource;
+    queue.push_back((source_idx, 200)); // might need to tweak this.
+  }
+
+  while let Some((idx, cur_flow)) = queue.pop_front() {
+    for (adj_idx, height_to_adj) in graph.adjacent(idx) {
+      if parents[adj_idx as usize] == NotVisited {
+        parents[adj_idx as usize] = Segment(idx);
+        let new_flow = min(cur_flow, height_to_adj);
+        if graph.segment_kind(adj_idx) == SegmentKind::Sink {
+          return Some((adj_idx, new_flow));
+        }
+        queue.push_back((adj_idx, new_flow));
+      }
+    }
+  }
+
+  // Default
+  None
+}
+
+/// Run the edwards-karp max flow finding algorithm
+/// on the segment graph.
+fn max_flow_transform(
+  graph: &mut SegmentGraph
+) {
+  let mut parents = vec![SegmentParent::NotVisited; graph.color_count as usize];
+  let mut max_flow: Height = 0;
+
+  while let Some((sink_idx, flow)) = max_flow_bfs(graph, &mut parents) {
+    if flow == 0 {
+      // I don't think this should happen
+      warn!("Flow found by max_flow_bfs was 0");
+      break;
+    }
+    max_flow += flow;
+    let mut cur_idx = sink_idx;
+    while graph.segment_kind(cur_idx) != SegmentKind::Source {
+      match parents[cur_idx as usize] {
+        SegmentParent::Segment(prev_idx) => {
+          graph[(prev_idx, cur_idx)] -= flow;
+          graph[(cur_idx, prev_idx)] += flow;
+          cur_idx = prev_idx;
+        }
+        _ => panic!("Shouldn't be possible"),
+      }
+    }
+  }
+}
+
+/// Create a list of coordinates where border walls should be built.
+fn border_walls_to_build(
+  graph: &SegmentGraph,
+  borders: &SegmentBorders
+) -> impl Iterator<Item = RoomXY> {
+  let cut_edges = iproduct!(0..graph.color_count, 0..graph.color_count)
+    .filter(|(a,b)| {
+      let a = *a;
+      let b = *b;
+      let ab = graph[(a,b)];
+      let ba = graph[(b,a)];
+      a != b && min(ab, ba) == 0 && max(ab, ba) > 0
+    });
+
+  let mut walls: HashSet<RoomXY> = HashSet::new();
+
+  for (a, b) in cut_edges {
+    for wall in borders.get_mut_or_default(a, b).iter() {
+      walls.insert(*wall)
+    }
+  }
+
+  walls.into_iter()
+}
+
+/// Mark which segments are inside the walls and which aren't.
+fn mark_inside_segments(
+  &graph: SegmentGraph
+) -> Vec<bool> {
+  let mut inside = vec![true; graph.color_count as usize];
+
+  let mut stack: Vec<ColorIdx> = graph
+    .segments_of_kind(SegmentKind::Sink)
+    .collect();
+
+  while let Some(cur_idx) = stack.pop() {
+    inside[cur_idx as usize] = false;
+    for adj_idx in 0..graph.color_count {
+      // if we haven't visited this yet, inside will still be true.
+      if inside[adj_idx as usize] || !graph.is_cut_edge(cur_idx, adj_idx) {
+        inside[adj_idx as usize] = false;
+      }
+    }
+  }
+
+  inside
 }
 
 pub enum Render {
@@ -357,11 +770,14 @@ fn calculate_color(size: ColorIdx, color: Color) -> String {
 
 // TODO: add the ability to pass in a list of sources to cause to unify.
 /// Segment a room.
+///
+/// Sources can be in the same room segment.
 pub fn room_cut(
   terrain: &LocalRoomTerrain,
   visual: RoomVisual,
-  render: Render
-) -> Vec<RoomXY> {
+  render: Render,
+  sources: &[RoomXY]
+) -> impl Iterator<Item = RoomXY> {
   let height_map = DistMatrix::new_taxicab(terrain);
   // let maximas: Vec<Maxima> = find_maxima(&dist_matrix).collect();
   let (maxima_iter, mut maxima_dts) = calculate_local_maxima(&height_map);
@@ -370,7 +786,15 @@ pub fn room_cut(
   let (color_map, color_count, borders) = flood_color_map(
     &height_map, maxima_set.iter().copied());
 
+  let segment_borders = SegmentBorders::new(&color_map, &borders);
+
+  let mut segment_graph = create_segment_graph(
+    &color_map, color_count, &segment_borders, &height_map, sources);
+
   let (disp_color_map, disp_color_count) = (color_map, color_count); // maxima_colors;
+
+  debug!("Segment Graph:\n{segment_graph}");
+  let walls = border_walls_to_build(&segment_graph, &segment_borders);
 
   for xy in all_room_xy() {
     let (x,y): (u8,u8) = xy.into();
@@ -390,5 +814,6 @@ pub fn room_cut(
     };
     visual.text(fx, fy, num_str, Some(style));
   }
-  vec![]
+
+  walls
 }

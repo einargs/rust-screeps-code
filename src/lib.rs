@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 
 use js_sys::{JsString, Object, Reflect};
 use log::*;
-use rooms::min_cut::{build_cost_matrix, min_cut_to_exit};
+use rooms::tile_min_cut::{build_cost_matrix, min_cut_to_exit};
 use screeps::constants::{ErrorCode, Part, ResourceType};
 use screeps::enums::StructureObject;
 use screeps::local::ObjectId;
@@ -84,7 +84,13 @@ pub fn test_room_cut(name: JsString, render: JsString) {
   };
   let room = game::rooms().get(name).unwrap();
   let local_terrain = room.get_terrain().into();
-  room_cut(&local_terrain, room.visual(), render);
+  let sources: Vec<RoomXY> = [
+    (34, 41),
+    // both in the same segment rn
+    (25, 17),
+    (28, 10)
+  ].into_iter().map(|p| RoomXY::try_from(p).unwrap()).collect();
+  room_cut(&local_terrain, room.visual(), render, &sources);
   /*
   let sources: Vec<RoomXY> = iproduct!(15..26, 15..26)
     //zip(4..25, repeat(15))
@@ -100,7 +106,7 @@ thread_local! {
 
 #[wasm_bindgen(js_name = testMinCut)]
 pub fn test_min_cut(name: JsString) {
-  use rooms::min_cut::*;
+  use rooms::tile_min_cut::*;
   use itertools::iproduct;
   use std::iter::{repeat, zip};
   info!("Called from js");
